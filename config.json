@@ -1,0 +1,101 @@
+{
+  "news_sources": {
+    "hket": {
+      "name": "HKET",
+      "base_url": "https://www.hket.com",
+      "property_url": "https://www.hket.com/",
+      "search_patterns": ["地產", "property", "real estate", "transaction", "成交", "樓市", "物業", "商廈", "整幢", "整棟"]
+    },
+    "wenweipo": {
+      "name": "文匯報",
+      "base_url": "https://www.wenweipo.com",
+      "property_url": "https://www.wenweipo.com/business/real-estate",
+      "search_patterns": ["地產", "property", "real estate", "transaction", "成交", "樓市", "物業", "商廈", "整幢", "整棟"]
+    },
+    "stheadline": {
+      "name": "星島頭條",
+      "base_url": "https://www.stheadline.com",
+      "property_url": "https://www.stheadline.com/property/地產",
+      "search_patterns": ["地產", "property", "real estate", "transaction", "成交", "樓市", "物業", "商廈", "整幢", "整棟"]
+    }
+  },
+  "ai_config": {
+    "provider": "deepseek",
+    "model": "deepseek-chat",
+    "api_key": "sk-1ccd242abedd4972a3bab56e67c16094",
+    "base_url": "https://api.deepseek.com/v1",
+    "max_tokens": 2000,
+    "temperature": 0.3
+  },
+  "transaction_keywords": [
+    "成交", "transaction", "sale", "purchase", "deal",
+    "億", "million", "billion", "HKD", "港幣",
+    "地皮", "land", "物業", "property", "商舖", "shop",
+    "寫字樓", "office", "住宅", "residential", "樓盤", "新盤",
+    "整幢", "整棟", "全幢", "全棟", "商廈", "商廈成交",
+    "車位", "car park", "parking", "CPS"
+  ],
+  "news_keywords": [
+    "市場", "market", "趨勢", "trend", "分析", "analysis",
+    "政策", "policy", "利率", "interest rate", "空置率", "vacancy",
+    "租金", "rent", "價格", "price", "指數", "index", "樓市", "物業市場",
+    "商廈", "整幢", "整棟", "成交", "市場分析"
+  ],
+  "asset_type_keywords": {
+    "office": ["寫字樓", "office", "商廈", "商業大廈", "甲級寫字樓", "乙級寫字樓"],
+    "retail": ["商舖", "shop", "零售", "商場", "購物中心", "街舖"],
+    "residential": ["住宅", "residential", "樓盤", "新盤", "豪宅", "公寓", "單位"],
+    "hotel": ["酒店", "hotel", "賓館", "旅館", "度假村"],
+    "land": ["地皮", "land", "地塊", "土地", "地盤"],
+    "cps": ["車位", "car park", "parking", "停車位", "CPS"]
+  },
+  "report_config": {
+    "output_dir": "output",
+    "template_dir": "templates",
+    "date_format": "%Y%m%d",
+    "week_start": "monday",
+    "min_transaction_value": 50000000,
+    "max_articles_per_source": 20,
+    "excel_filename_template": "{date}.VMTA Market Updates.xlsx",
+    "min_area_for_ai_analysis": 3000
+  },
+  "scraping_config": {
+    "timeout": 30,
+    "retry_attempts": 3,
+    "delay_between_requests": 2,
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "use_chromedriver": true,
+    "chromedriver_path": null,
+    "headless": true
+  },
+  "big_deals_baseline": {
+    "residential": {
+      "min_value": 100000000,
+      "description": "Residential properties worth 100M+ HKD"
+    },
+    "commercial": {
+      "min_value": 50000000,
+      "description": "Commercial properties worth 50M+ HKD"
+    },
+    "land": {
+      "min_value": 200000000,
+      "description": "Land transactions worth 200M+ HKD"
+    },
+    "retail": {
+      "min_value": 30000000,
+      "description": "Retail properties worth 30M+ HKD"
+    },
+    "office": {
+      "min_value": 80000000,
+      "description": "Office properties worth 80M+ HKD"
+    },
+    "hotel": {
+      "min_value": 150000000,
+      "description": "Hotel properties worth 150M+ HKD"
+    },
+    "cps": {
+      "min_value": 10000000,
+      "description": "Car park spaces worth 10M+ HKD"
+    }
+  }
+} 
