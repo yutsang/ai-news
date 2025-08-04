@@ -15,7 +15,7 @@ import os
 from datetime import datetime
 from typing import Optional
 
-from config import get_week_period, get_last_full_week, REPORT_CONFIG, AI_CONFIG
+from config import get_week_period, get_last_full_week, REPORT_CONFIG
 from enhanced_scraper import EnhancedMarketScraper
 from ai_summarizer import DeepSeekSummarizer
 from report_generator import ReportGenerator
@@ -38,11 +38,11 @@ class MarketNewsReviewSystem:
         Initialize the Market News Review System.
         
         Args:
-            api_key: DeepSeek API key. If None, will try to load from config or environment.
+            api_key: DeepSeek API key. If None, will try to load from environment.
         """
-        self.api_key = api_key or os.getenv('DEEPSEEK_API_KEY') or AI_CONFIG.get('api_key')
+        self.api_key = api_key or os.getenv('DEEPSEEK_API_KEY')
         if not self.api_key:
-            raise ValueError("DeepSeek API key is required. Set DEEPSEEK_API_KEY environment variable, pass as argument, or configure in config.json.")
+            raise ValueError("DeepSeek API key is required. Set DEEPSEEK_API_KEY environment variable or pass as argument.")
         
         self.summarizer = DeepSeekSummarizer(self.api_key)
         self.report_generator = ReportGenerator()

@@ -3,26 +3,26 @@
     "hket": {
       "name": "HKET",
       "base_url": "https://www.hket.com",
-      "property_url": "https://www.hket.com/",
+      "property_url": "https://ps.hket.com",
       "search_patterns": ["地產", "property", "real estate", "transaction", "成交", "樓市", "物業", "商廈", "整幢", "整棟"]
     },
     "wenweipo": {
       "name": "文匯報",
       "base_url": "https://www.wenweipo.com",
-      "property_url": "https://www.wenweipo.com/business/real-estate",
+      "property_url": "http://paper.wenweipo.com/007ME/",
       "search_patterns": ["地產", "property", "real estate", "transaction", "成交", "樓市", "物業", "商廈", "整幢", "整棟"]
     },
     "stheadline": {
       "name": "星島頭條",
       "base_url": "https://www.stheadline.com",
-      "property_url": "https://www.stheadline.com/property/地產",
+      "property_url": "https://www.stheadline.com/daily-property/",
       "search_patterns": ["地產", "property", "real estate", "transaction", "成交", "樓市", "物業", "商廈", "整幢", "整棟"]
     }
   },
   "ai_config": {
     "provider": "deepseek",
     "model": "deepseek-chat",
-    "api_key": "sk-1ccd242abedd4972a3bab56e67c16094",
+    "api_key": "sk-013e00392a7d433b8d1d09d88bc0b62e",
     "base_url": "https://api.deepseek.com/v1",
     "max_tokens": 2000,
     "temperature": 0.3
@@ -66,7 +66,7 @@
     "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     "use_chromedriver": true,
     "chromedriver_path": null,
-    "headless": true
+    "headless": false
   },
   "big_deals_baseline": {
     "residential": {
