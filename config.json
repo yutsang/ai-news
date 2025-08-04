@@ -3,7 +3,7 @@
     "hket": {
       "name": "HKET",
       "base_url": "https://www.hket.com",
-      "property_url": "https://ps.hket.com",
+      "property_url": "https://ps.hket.com/srae005/即時樓市",
       "search_patterns": ["地產", "property", "real estate", "transaction", "成交", "樓市", "物業", "商廈", "整幢", "整棟"]
     },
     "wenweipo": {
@@ -54,8 +54,8 @@
     "template_dir": "templates",
     "date_format": "%Y%m%d",
     "week_start": "monday",
-    "min_transaction_value": 50000000,
-    "max_articles_per_source": 20,
+    "min_transaction_value": 30000000,
+    "max_articles_per_source": 200,
     "excel_filename_template": "{date}.VMTA Market Updates.xlsx",
     "min_area_for_ai_analysis": 3000
   },

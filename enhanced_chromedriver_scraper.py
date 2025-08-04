@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Improved ChromeDriver Hong Kong Real Estate Market Scraper
-With DeepSeek content validation and better content extraction
+Enhanced ChromeDriver Hong Kong Real Estate Market Scraper
+With two-stage validation and improved transaction filtering
 """
 
 import asyncio
@@ -13,7 +13,7 @@ import os
 import re
 import time
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -27,7 +27,7 @@ from config import AI_CONFIG
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
-class ImprovedChromeDriverMarketScraper:
+class EnhancedChromeDriverMarketScraper:
     def __init__(self):
         self.ai_client = None
         self.session = None
@@ -346,6 +346,7 @@ class ImprovedChromeDriverMarketScraper:
                 'summary': 'Transaction detected by keywords',
                 'transaction_value': self.extract_transaction_value(content),
                 'property_name': 'N/A',
+                'area_sqft': self.extract_area_sqft(content),
                 'reason': 'Contains transaction keywords'
             }
         
@@ -358,6 +359,7 @@ class ImprovedChromeDriverMarketScraper:
                 'summary': 'Market news detected by keywords',
                 'transaction_value': 0,
                 'property_name': 'N/A',
+                'area_sqft': 0,
                 'reason': 'Contains news keywords'
             }
         
@@ -367,6 +369,7 @@ class ImprovedChromeDriverMarketScraper:
             'summary': 'N/A',
             'transaction_value': 0,
             'property_name': 'N/A',
+            'area_sqft': 0,
             'reason': 'No relevant keywords found'
         }
     
@@ -469,6 +472,30 @@ class ImprovedChromeDriverMarketScraper:
         
         return ' '.join(content_lines)
     
+    def get_last_week_dates(self) -> tuple:
+        """Get last Monday to Friday dates"""
+        today = datetime.now()
+        
+        # For testing: use a broader range to include recent articles
+        # Start from 7 days ago to include more recent content
+        start_date = today - timedelta(days=7)
+        end_date = today
+        
+        return start_date, end_date
+    
+    def is_date_in_range(self, article_date: str, start_date: datetime, end_date: datetime) -> bool:
+        """Check if article date is within the specified range"""
+        try:
+            # Parse article date (dd/mm/yyyy format)
+            day, month, year = article_date.split('/')
+            article_dt = datetime(int(year), int(month), int(day))
+            
+            # Check if date is within range (inclusive)
+            return start_date <= article_dt <= end_date
+        except:
+            # If date parsing fails, assume it's recent and include it
+            return True
+    
     def extract_article_date(self, soup: BeautifulSoup, url: str) -> str:
         """Extract article date using multiple strategies"""
         # Strategy 1: Look for date in meta tags
@@ -534,9 +561,9 @@ class ImprovedChromeDriverMarketScraper:
         # Fallback: Use current date
         return datetime.now().strftime('%d/%m/%Y')
     
-    async def scrape_hket(self) -> tuple:
-        """Scrape HKET using ChromeDriver with infinite scrolling"""
-        print("🔍 Scraping HKET...")
+    async def scrape_source(self, source_name: str, url: str = None) -> tuple:
+        """Generic method to scrape any source using config URLs"""
+        print(f"🔍 Scraping {source_name}...")
         transactions = []
         news = []
         
@@ -544,29 +571,180 @@ class ImprovedChromeDriverMarketScraper:
             if not self.setup_chromedriver():
                 return transactions, news
         
+        # Get date range for filtering
+        start_date, end_date = self.get_last_week_dates()
+        print(f"   📅 Filtering for articles from {start_date.strftime('%d/%m/%Y')} to {end_date.strftime('%d/%m/%Y')}")
+        
         try:
-            # Navigate to HKET real estate page using config URL
-            hket_url = self.config['news_sources']['hket']['property_url']
-            self.driver.get(hket_url)
+            # Get source config
+            source_config = self.config['news_sources'][source_name.lower()]
+            
+            # Use provided URL or fall back to configured property_url
+            if url is None:
+                url = source_config['property_url']
+            
+            # Step 1: Navigate to property news list page
+            print(f"   📄 Loading property news list: {url}")
+            self.driver.get(url)
             WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             
-            # Get page source and extract links
+            # Step 2: Scroll through the list to load more content
+            print(f"   📜 Scrolling to load more articles...")
+            scroll_count = 0
+            max_scrolls = 50  # Reduced for faster processing
+            
+            while scroll_count < max_scrolls:
+                # Scroll down
+                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(2)
+                
+                scroll_count += 1
+                if scroll_count % 10 == 0:
+                    print(f"   Scrolled {scroll_count} times...")
+            
+            # Step 3: Extract all article links and titles from the list
+            print(f"   🔍 Extracting article links and titles from list...")
             html = self.driver.page_source
             soup = BeautifulSoup(html, 'html.parser')
             
-            links = []
-            for link in soup.find_all('a', href=True):
-                href = link['href']
-                if '/article/' in href and href.startswith('http'):
-                    links.append(href)
+            # Extract ALL links from the page - let AI filter them
+            print(f"   🔍 Extracting ALL links from the page...")
             
-            print(f"   Found {len(links)} articles")
+            # Get all links from the page
+            all_links = soup.find_all('a', href=True)
+            print(f"   Found {len(all_links)} total links on the page")
             
-            # Process articles
-            for i, url in enumerate(links[:20]):  # Process articles from the page
+            # Filter out common non-article links
+            filtered_links = []
+            for link in all_links:
+                href = link.get('href', '').strip()
+                if href and href != '#' and href != '/' and not href.startswith('javascript:'):
+                    # Skip common navigation and utility links
+                    skip_patterns = [
+                        '/login', '/register', '/search', '/contact', '/about',
+                        '/privacy', '/terms', '/cookie', '/sitemap', '/rss',
+                        'facebook.com', 'twitter.com', 'instagram.com', 'youtube.com',
+                        '.pdf', '.jpg', '.png', '.gif', '.css', '.js'
+                    ]
+                    
+                    should_skip = any(pattern in href.lower() for pattern in skip_patterns)
+                    if not should_skip:
+                        filtered_links.append(link)
+            
+            print(f"   Filtered to {len(filtered_links)} potential article links")
+            items = filtered_links
+            
+            # Extract links and titles
+            article_items = []
+            for item in items:
                 try:
-                    print(f"   Processing article {i+1}/{min(20, len(links))}")
-                    self.driver.get(url)
+                    # Find link
+                    link_elem = item.find('a', href=True) if item.name != 'a' else item
+                    if not link_elem:
+                        continue
+                    
+                    href = link_elem.get('href')
+                    if not href:
+                        continue
+                    
+                    # Convert relative URLs to absolute URLs
+                    if not href.startswith('http'):
+                        if href.startswith('/'):
+                            # Absolute path on same domain
+                            from urllib.parse import urljoin
+                            href = urljoin(url, href)
+                        else:
+                            # Relative path
+                            from urllib.parse import urljoin
+                            href = urljoin(url, href)
+                    
+                    # Find title with multiple strategies
+                    title_text = "N/A"
+                    
+                    # Strategy 1: Look for title in common elements
+                    title_elem = item.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'div', 'a'])
+                    if title_elem:
+                        title_text = title_elem.get_text().strip()
+                    
+                    # Strategy 2: If title is too short or "N/A", try to extract from link text
+                    if title_text == "N/A" or len(title_text) < 5:
+                        if item.name == 'a':
+                            title_text = item.get_text().strip()
+                        else:
+                            link_elem = item.find('a')
+                            if link_elem:
+                                title_text = link_elem.get_text().strip()
+                    
+                    # Strategy 3: If still no title, try to extract from URL
+                    if title_text == "N/A" or len(title_text) < 5:
+                        if href:
+                            # Try to extract meaningful text from URL
+                            url_parts = href.split('/')
+                            if len(url_parts) > 1:
+                                last_part = url_parts[-1]
+                                if last_part and len(last_part) > 5:
+                                    title_text = last_part.replace('-', ' ').replace('_', ' ')
+                    
+                    # Clean up title
+                    if title_text and title_text != "N/A":
+                        title_text = title_text.replace('\n', ' ').replace('\r', ' ').strip()
+                        # Remove excessive whitespace
+                        title_text = ' '.join(title_text.split())
+                    
+                    # Find date (if available in the list item)
+                    date_elem = item.find(['time', 'span', 'div'], class_=lambda x: x and any(word in x.lower() for word in ['date', 'time', 'published']))
+                    date_text = date_elem.get_text().strip() if date_elem else None
+                    
+                    article_items.append({
+                        'url': href,
+                        'title': title_text,
+                        'date': date_text
+                    })
+                    
+                except Exception as e:
+                    continue
+            
+            # Remove duplicates
+            seen_urls = set()
+            unique_items = []
+            for item in article_items:
+                if item['url'] not in seen_urls:
+                    seen_urls.add(item['url'])
+                    unique_items.append(item)
+            
+            print(f"   📋 Found {len(unique_items)} unique articles in list")
+            
+            # Step 4: Use AI to filter relevant articles from the list
+            print(f"   🤖 Using AI to filter relevant articles...")
+            relevant_items = []
+            
+            for i, item in enumerate(unique_items[:100]):  # Limit to first 100 for efficiency
+                try:
+                    print(f"   Checking article {i+1}/{min(100, len(unique_items))}: {item['title'][:50]}...")
+                    
+                    # Use AI to check if this article is relevant
+                    topic_validation = await self.validate_topic_with_deepseek(item['title'], item['url'])
+                    
+                    if topic_validation['is_relevant']:
+                        relevant_items.append(item)
+                        print(f"   ✅ Relevant: {topic_validation['reason']}")
+                    else:
+                        print(f"   ❌ Skipped: {topic_validation['reason']}")
+                        
+                except Exception as e:
+                    print(f"   Error checking article: {e}")
+                    continue
+            
+            print(f"   🎯 AI identified {len(relevant_items)} relevant articles")
+            
+            # Step 5: Visit only the relevant articles for detailed analysis
+            print(f"   📖 Processing relevant articles for detailed analysis...")
+            
+            for i, item in enumerate(relevant_items):
+                try:
+                    print(f"   Processing relevant article {i+1}/{len(relevant_items)}: {item['title'][:50]}...")
+                    
+                    self.driver.get(item['url'])
                     time.sleep(1)
                     
                     # Handle any popups or ads
@@ -575,30 +753,26 @@ class ImprovedChromeDriverMarketScraper:
                     article_html = self.driver.page_source
                     article_soup = BeautifulSoup(article_html, 'html.parser')
                     
-                    # Extract title
-                    title = article_soup.find('h1')
-                    title_text = title.get_text().strip() if title else "N/A"
-                    
-                    # Stage 1: Validate topic with DeepSeek (fast check)
-                    topic_validation = await self.validate_topic_with_deepseek(title_text, url)
-                    
-                    if not topic_validation['is_relevant']:
-                        print(f"   Skipping article: {topic_validation['reason']}")
-                        continue
-                    
                     # Extract main content
                     content = self.extract_main_content(article_soup)
                     
-                    if len(content) < 50:  # Lowered threshold for more content
+                    if len(content) < 50:
+                        print(f"   ⚠️ Content too short, skipping...")
                         continue
                     
                     # Extract article date
-                    article_date = self.extract_article_date(article_soup, url)
+                    article_date = self.extract_article_date(article_soup, item['url'])
                     
-                    # Stage 2: Validate content with DeepSeek (detailed check)
-                    validation = await self.validate_content_with_deepseek(content, title_text, url)
+                    # Check if article is within date range
+                    if not self.is_date_in_range(article_date, start_date, end_date):
+                        print(f"   ⏰ Date {article_date} outside range, skipping...")
+                        continue
+                    
+                    # Use AI to analyze content and extract details
+                    validation = await self.validate_content_with_deepseek(content, item['title'], item['url'])
                     
                     if not validation['is_relevant']:
+                        print(f"   ❌ Content not relevant: {validation['reason']}")
                         continue
                     
                     if validation['type'] == 'transaction':
@@ -641,257 +815,32 @@ class ImprovedChromeDriverMarketScraper:
                                 'yield': 'N/A',
                                 'seller_landlord': 'N/A',
                                 'buyer_tenant': 'N/A',
-                                'source': 'HKET',
-                                'url': url,
+                                'source': source_config['name'],
+                                'url': item['url'],
                                 'validation_reason': validation.get('reason', 'N/A')
                             }
                             transactions.append(transaction)
+                            print(f"   💰 Transaction added: {transaction_value:,} HKD")
                     
                     elif validation['type'] == 'news':
                         news_item = {
-                            'source': 'HKET',
+                            'source': source_config['name'],
                             'asset_type': 'N/A',
-                            'topic': title_text,
+                            'topic': item['title'],
                             'summary': validation.get('summary', 'N/A'),
-                            'website': url,
+                            'website': item['url'],
                             'date': article_date,
                             'validation_reason': validation.get('reason', 'N/A')
                         }
                         news.append(news_item)
+                        print(f"   📰 News added: {validation.get('summary', 'N/A')[:50]}...")
                         
                 except Exception as e:
                     print(f"   Error processing article: {e}")
                     continue
                     
         except Exception as e:
-            print(f"   ❌ Error scraping HKET: {e}")
-        
-        print(f"   ✅ Found {len(transactions)} transactions, {len(news)} news articles")
-        return transactions, news
-    
-    async def scrape_wenweipo(self) -> tuple:
-        """Scrape Wenweipo using ChromeDriver"""
-        print("🔍 Scraping Wenweipo...")
-        transactions = []
-        news = []
-        
-        if not self.driver:
-            if not self.setup_chromedriver():
-                return transactions, news
-        
-        try:
-            # Navigate to Wenweipo real estate page using config URL
-            wenweipo_url = self.config['news_sources']['wenweipo']['property_url']
-            self.driver.get(wenweipo_url)
-            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-            
-            # Get page source and extract links
-            html = self.driver.page_source
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            links = []
-            for link in soup.find_all('a', href=True):
-                href = link['href']
-                if href.startswith('http') and 'wenweipo.com' in href:
-                    links.append(href)
-            
-            print(f"   Found {len(links)} articles")
-            
-            # Process articles
-            for i, url in enumerate(links[:15]):  # Process articles from the page
-                try:
-                    print(f"   Processing article {i+1}/{min(15, len(links))}")
-                    self.driver.get(url)
-                    time.sleep(1)
-                    
-                    # Handle any popups or ads
-                    self.handle_popups_and_ads()
-                    
-                    article_html = self.driver.page_source
-                    article_soup = BeautifulSoup(article_html, 'html.parser')
-                    
-                    # Extract title
-                    title = article_soup.find('title')
-                    title_text = title.get_text().strip() if title else "N/A"
-                    
-                    # Extract main content
-                    content = self.extract_main_content(article_soup)
-                    
-                    if len(content) < 50:  # Lowered threshold for more content
-                        continue
-                    
-                    # Extract article date
-                    article_date = self.extract_article_date(article_soup, url)
-                    
-                    # Validate content with DeepSeek
-                    validation = await self.validate_content_with_deepseek(content, title_text, url)
-                    
-                    if not validation['is_relevant']:
-                        continue
-                    
-                    if validation['type'] == 'transaction':
-                        transaction_value = validation.get('transaction_value', 0) or self.extract_transaction_value(content)
-                        
-                        # Ensure transaction_value is an integer
-                        if isinstance(transaction_value, str):
-                            try:
-                                transaction_value = int(transaction_value)
-                            except:
-                                transaction_value = 0
-                        
-                        if transaction_value >= 50000000:  # 50M HKD minimum
-                            transaction = {
-                                'property': validation.get('property_name', 'N/A'),
-                                'district': 'N/A',
-                                'asset_type': 'N/A',
-                                'floor': 'N/A',
-                                'unit': 'N/A',
-                                'transaction_type': 'sales',
-                                'date': article_date,
-                                'transaction_price': transaction_value,
-                                'area_basis': 'N/A',
-                                'unit_basis': 'N/A',
-                                'area_unit': 'N/A',
-                                'unit_price': 'N/A',
-                                'yield': 'N/A',
-                                'seller_landlord': 'N/A',
-                                'buyer_tenant': 'N/A',
-                                'source': 'Wenweipo',
-                                'url': url,
-                                'validation_reason': validation.get('reason', 'N/A')
-                            }
-                            transactions.append(transaction)
-                    
-                    elif validation['type'] == 'news':
-                        news_item = {
-                            'source': 'Wenweipo',
-                            'asset_type': 'N/A',
-                            'topic': title_text,
-                            'summary': validation.get('summary', 'N/A'),
-                            'website': url,
-                            'date': article_date,
-                            'validation_reason': validation.get('reason', 'N/A')
-                        }
-                        news.append(news_item)
-                        
-                except Exception as e:
-                    print(f"   Error processing article: {e}")
-                    continue
-                    
-        except Exception as e:
-            print(f"   ❌ Error scraping Wenweipo: {e}")
-        
-        print(f"   ✅ Found {len(transactions)} transactions, {len(news)} news articles")
-        return transactions, news
-    
-    async def scrape_stheadline(self) -> tuple:
-        """Scrape Sing Tao Headline using ChromeDriver"""
-        print("🔍 Scraping Sing Tao Headline...")
-        transactions = []
-        news = []
-        
-        if not self.driver:
-            if not self.setup_chromedriver():
-                return transactions, news
-        
-        try:
-            # Navigate to Sing Tao Headline daily property page using config URL
-            stheadline_url = self.config['news_sources']['stheadline']['property_url']
-            self.driver.get(stheadline_url)
-            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-            
-            # Get page source and extract links
-            html = self.driver.page_source
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            links = []
-            for link in soup.find_all('a', href=True):
-                href = link['href']
-                if href.startswith('http') and 'stheadline.com' in href:
-                    links.append(href)
-            
-            print(f"   Found {len(links)} articles")
-            
-            # Process articles
-            for i, url in enumerate(links[:15]):  # Process articles from the page
-                try:
-                    print(f"   Processing article {i+1}/{min(15, len(links))}")
-                    self.driver.get(url)
-                    time.sleep(1)
-                    
-                    article_html = self.driver.page_source
-                    article_soup = BeautifulSoup(article_html, 'html.parser')
-                    
-                    # Extract title
-                    title = article_soup.find('title')
-                    title_text = title.get_text().strip() if title else "N/A"
-                    
-                    # Extract main content
-                    content = self.extract_main_content(article_soup)
-                    
-                    if len(content) < 50:  # Lowered threshold for more content
-                        continue
-                    
-                    # Extract article date
-                    article_date = self.extract_article_date(article_soup, url)
-                    
-                    # Validate content with DeepSeek
-                    validation = await self.validate_content_with_deepseek(content, title_text, url)
-                    
-                    if not validation['is_relevant']:
-                        continue
-                    
-                    if validation['type'] == 'transaction':
-                        transaction_value = validation.get('transaction_value', 0) or self.extract_transaction_value(content)
-                        
-                        # Ensure transaction_value is an integer
-                        if isinstance(transaction_value, str):
-                            try:
-                                transaction_value = int(transaction_value)
-                            except:
-                                transaction_value = 0
-                        
-                        if transaction_value >= 50000000:  # 50M HKD minimum
-                            transaction = {
-                                'property': validation.get('property_name', 'N/A'),
-                                'district': 'N/A',
-                                'asset_type': 'N/A',
-                                'floor': 'N/A',
-                                'unit': 'N/A',
-                                'transaction_type': 'sales',
-                                'date': article_date,
-                                'transaction_price': transaction_value,
-                                'area_basis': 'N/A',
-                                'unit_basis': 'N/A',
-                                'area_unit': 'N/A',
-                                'unit_price': 'N/A',
-                                'yield': 'N/A',
-                                'seller_landlord': 'N/A',
-                                'buyer_tenant': 'N/A',
-                                'source': 'Sing Tao Headline',
-                                'url': url,
-                                'validation_reason': validation.get('reason', 'N/A')
-                            }
-                            transactions.append(transaction)
-                    
-                    elif validation['type'] == 'news':
-                        news_item = {
-                            'source': 'Sing Tao Headline',
-                            'asset_type': 'N/A',
-                            'topic': title_text,
-                            'summary': validation.get('summary', 'N/A'),
-                            'website': url,
-                            'date': article_date,
-                            'validation_reason': validation.get('reason', 'N/A')
-                        }
-                        news.append(news_item)
-                        
-                except Exception as e:
-                    print(f"   Error processing article: {e}")
-                    continue
-                    
-        except Exception as e:
-            print(f"   ❌ Error scraping Sing Tao Headline: {e}")
+            print(f"   ❌ Error scraping {source_name}: {e}")
         
         print(f"   ✅ Found {len(transactions)} transactions, {len(news)} news articles")
         return transactions, news
@@ -904,18 +853,24 @@ class ImprovedChromeDriverMarketScraper:
         all_transactions = []
         all_news = []
         
-        # Scrape each source
-        hket_transactions, hket_news = await self.scrape_hket()
-        all_transactions.extend(hket_transactions)
-        all_news.extend(hket_news)
+        # Define sources with their URLs
+        sources_config = {
+            'hket': ['https://ps.hket.com/srae005/即時樓市'],
+            'wenweipo': [
+                'http://paper.wenweipo.com/007ME/',
+                'https://www.wenweipo.com/business/real-estate'
+            ],
+            'stheadline': ['https://www.stheadline.com/daily-property/']
+        }
         
-        wenweipo_transactions, wenweipo_news = await self.scrape_wenweipo()
-        all_transactions.extend(wenweipo_transactions)
-        all_news.extend(wenweipo_news)
-        
-        stheadline_transactions, stheadline_news = await self.scrape_stheadline()
-        all_transactions.extend(stheadline_transactions)
-        all_news.extend(stheadline_news)
+        for source_name, urls in sources_config.items():
+            print(f"🔍 Scraping {source_name}...")
+            
+            for url in urls:
+                print(f"   📄 Processing URL: {url}")
+                transactions, news = await self.scrape_source(source_name, url)
+                all_transactions.extend(transactions)
+                all_news.extend(news)
         
         results = {
             'transactions': all_transactions,
@@ -923,7 +878,8 @@ class ImprovedChromeDriverMarketScraper:
             'timestamp': datetime.now().isoformat(),
             'config_used': {
                 'headless': self.config['scraping_config']['headless'],
-                'min_transaction_value': self.config['report_config']['min_transaction_value']
+                'min_transaction_value': self.config['report_config']['min_transaction_value'],
+                'min_area_sqft': self.config['report_config']['min_area_for_ai_analysis']
             }
         }
         
@@ -932,6 +888,8 @@ class ImprovedChromeDriverMarketScraper:
         print(f"   Transactions: {len(all_transactions)}")
         print(f"   News Articles: {len(all_news)}")
         print(f"   Headless Mode: {self.config['scraping_config']['headless']}")
+        print(f"   Min Transaction Value: {self.config['report_config']['min_transaction_value']:,} HKD")
+        print(f"   Min Area: {self.config['report_config']['min_area_for_ai_analysis']} sq ft")
         print("=" * 50)
         
         return results
@@ -940,7 +898,7 @@ async def main():
     """Main function"""
     os.makedirs('output', exist_ok=True)
     
-    async with ImprovedChromeDriverMarketScraper() as scraper:
+    async with EnhancedChromeDriverMarketScraper() as scraper:
         results = await scraper.scrape_all_sources()
         
         # Save results with proper naming

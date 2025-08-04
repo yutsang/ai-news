@@ -1,0 +1,258 @@
+{
+  "transactions": [
+    {
+      "property": "N/A",
+      "district": "N/A",
+      "asset_type": "N/A",
+      "floor": "N/A",
+      "unit": "N/A",
+      "transaction_type": "sales",
+      "date": "04/08/2025",
+      "transaction_price": 8900000000,
+      "area_sqft": 290,
+      "area_basis": "N/A",
+      "unit_basis": "N/A",
+      "area_unit": "N/A",
+      "unit_price": "N/A",
+      "yield": "N/A",
+      "seller_landlord": "N/A",
+      "buyer_tenant": "N/A",
+      "source": "文匯報",
+      "url": "https://www.wenweipo.com/business/real-estate",
+      "validation_reason": "Contains transaction keywords"
+    }
+  ],
+  "news": [
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "新盤專頁",
+      "summary": "The article discusses the upcoming launch of the '維港‧灣畔' project in Kai Tak, highlighting its extensive amenities including a 50-meter Bali-inspired outdoor pool and a clubhouse designed with a yacht concept. It involves collaboration among major developers like China Overseas, Wharf, Henderson Land, and K. Wah.",
+      "website": "https://ps.hket.com/srae001/新盤專頁",
+      "date": "04/08/2025",
+      "validation_reason": "The content focuses on market news about a new development project and its features, rather than reporting on specific transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "樓市分析",
+      "summary": "The article provides a series of analyses on Hong Kong's real estate market, covering topics such as developer strategies, rental market trends, and specific property market behaviors. It includes insights on luxury property price surges, rental value comparisons, and developer inventory management.",
+      "website": "https://ps.hket.com/srae018/樓市分析",
+      "date": "04/08/2025",
+      "validation_reason": "The content is a collection of market analyses and trends rather than specific property transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "工商舖車位",
+      "summary": "The article discusses the closure of a '深仔記' noodle shop in Tseung Kwan O due to the landlord not renewing the lease, despite the shop's willingness to increase rent. It highlights rent as a contributing factor to the wave of restaurant closures.",
+      "website": "https://ps.hket.com/srae016/工商舖車位",
+      "date": "04/08/2025",
+      "validation_reason": "The content is relevant as it discusses commercial real estate market dynamics, specifically lease renewals and rent impacts on businesses."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "%E5%9C%B0%E7%94%A2%E7%AB%99%20 %20%E5%B8%82%E5%A0%B4%E8%B3%87%E8%A8%8A",
+      "summary": "The article provides market information and highlights various real estate-related publications and events, including new property guides, luxury property yearbooks, and property management industry updates.",
+      "website": "https://www.hket.com/theme/19-1/%E5%9C%B0%E7%94%A2%E7%AB%99%20-%20%E5%B8%82%E5%A0%B4%E8%B3%87%E8%A8%8A",
+      "date": "04/08/2025",
+      "validation_reason": "The content is focused on market trends, publications, and industry updates rather than specific property transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "海外置業情報",
+      "summary": "The article discusses a flagship mixed-use development in London's Canada Water, highlighting the upcoming completion of a 35-story residential tower, The Founding, by a listed developer known for premium office spaces. It suggests commercial activities will drive property values in the area.",
+      "website": "https://ps.hket.com/srae010/海外置業情報",
+      "date": "04/08/2025",
+      "validation_reason": "The content focuses on market trends, development updates, and future prospects rather than specific transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "20:30",
+      "summary": "The article discusses a case where a single mother in Hong Kong faced issues after purchasing a second-hand subsidized housing unit with a 'photocopied deed,' leading to legal complications and loss of her deposit. It highlights potential pitfalls in real estate transactions and the importance of due diligence.",
+      "website": "https://ps.hket.com/article/3988539/%E5%96%AE%E8%A6%AA%E5%AA%BD%E5%AA%BD%E8%8A%B1%E5%85%89%E7%A9%8D%E8%93%84%E8%AA%A4%E8%B2%B7%E3%80%8C%E5%BD%B1%E5%8D%B0%E5%A5%91%E3%80%8D%E5%B1%85%E5%B1%8B%20%20%E9%8C%AF%E9%81%8E%E3%80%8C%E8%B8%A2%E5%A5%91%E3%80%8D%E9%99%90%E6%9C%9F%E9%81%AD%E6%AE%BA%E8%A8%8226%E8%90%AC%E5%85%BC%E7%B4%A2%E5%84%9F?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content is relevant as it covers a real estate market news story about a transaction issue, providing insights into legal and procedural challenges in Hong Kong's property market."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "20:25",
+      "summary": "The article discusses the surge in rental transactions and prices in Hong Kong's top 10 housing estates, driven by mainland Chinese students. It highlights record-high rental prices in estates like Sha Tin's City One and Taikoo Shing, with experts predicting continued rental growth and potential positive impacts on property prices.",
+      "website": "https://ps.hket.com/article/3987945/%E5%85%A7%E5%9C%B0%E7%94%9F%E6%90%B6%E7%A7%9F%E6%BD%AE%EF%BD%9C10%E5%A4%A7%E5%B1%8B%E8%8B%91%E7%A7%9F%E5%8B%99%E5%83%B9%E9%87%8F%E5%8D%87%20%E4%B8%80%E5%9F%8E%E9%87%8D%E4%B8%8A%E7%99%BE%E5%AE%97%E5%A4%AA%E5%8F%A4%E5%9F%8E%E5%91%8E%E7%A7%9F43%E7%A0%B4%E9%A0%82?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content focuses on market trends, rental price increases, and expert analysis rather than specific property transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "20:07",
+      "summary": "The article discusses Hong Kong's real estate market trends, noting a slight decrease in overall property registrations but an increase in secondary residential transactions. It highlights the impact of low bank interest rates and reduced trade tensions on the market. Additionally, it reports a significant drop in transactions for 35 major housing estates due to adverse weather conditions.",
+      "website": "https://ps.hket.com/article/3988534/%E7%BE%8E%E8%81%AF%EF%BC%9A35%E5%B1%8B%E8%8B%91%E9%8C%8446%E5%AE%97%E6%88%90%E4%BA%A4%20%E6%8C%89%E5%91%A8%E6%B8%9B%E5%B0%913%E6%88%90?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content provides analysis and updates on the Hong Kong real estate market, including transaction trends and external factors affecting the market, rather than detailing specific property transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "20:02",
+      "summary": "The article discusses a significant drop in secondary market transactions for Hong Kong's top 20 housing estates, with only 26 deals recorded in the past week, a 33.3% decrease from the previous week. The decline is attributed to adverse weather conditions and the market's focus on new property launches. The report breaks down the transaction changes by region, highlighting decreases in most areas except for a few estates in Kowloon.",
+      "website": "https://ps.hket.com/article/3988533/%E9%A6%99%E6%B8%AF%E7%BD%AE%E6%A5%AD%EF%BC%9A%E4%B8%8A%E5%91%A820%E5%A4%A7%E5%B1%8B%E8%8B%91%E9%8C%8426%E5%AE%97%E6%88%90%E4%BA%A4%20%E8%BE%B2%E6%9B%86%E6%96%B0%E5%B9%B4%E5%BE%8C%E6%96%B0%E4%BD%8E?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content provides a market analysis of the recent trends in Hong Kong's real estate secondary market, focusing on transaction volumes and regional performance rather than specific property transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "19:57",
+      "summary": "The article discusses Hong Kong's real estate market trends in July, highlighting a slight decline in property transactions but maintaining high levels. It mentions strong performance in both primary and secondary markets, with specific projects leading in sales. The article also anticipates a potential slowdown in August due to a shortage of secondary market listings.",
+      "website": "https://ps.hket.com/article/3988523/%E5%88%A9%E5%98%89%E9%96%A3%EF%BC%9A7%E6%9C%88%E6%95%B4%E9%AB%94%E6%A8%93%E5%AE%87%E8%B2%B7%E8%B3%A3%E9%AB%98%E4%BC%817211%E5%AE%97%C2%A0%E4%BA%8C%E6%89%8B%E7%9B%A4%E6%BA%90%E7%9F%AD%E7%BC%BA%E6%9C%AC%E6%9C%88%E6%81%90%E5%9B%9E%E6%B0%A3?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content provides an analysis of the real estate market trends, transaction volumes, and future expectations, fitting the 'news' category."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "19:09",
+      "summary": "The article discusses the design and features of a new single-block residential project, '半山名滙' (Mid-Levels Namei), in Hong Kong's Western District. It highlights the Italian-style luxury design, practical layout modifications, and the 3.5-meter ceiling height to reduce a sense of pressure.",
+      "website": "https://ps.hket.com/article/3988258/%E7%A4%BA%E7%AF%84%E5%96%AE%E4%BD%8D%EF%BD%9C%E5%8D%8A%E5%B1%B1%E5%90%8D%E6%BB%991%E6%88%BF%E6%8E%A1%E6%84%8F%E5%BC%8F%E5%A5%A2%E8%8F%AF%E9%A2%A8%E6%A0%BC%20%20%E6%A8%93%E9%AB%983.5%E7%B1%B3%E9%99%8D%E5%A3%93%E8%BF%AB%E6%84%9F?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content focuses on showcasing a new property development's design and features rather than reporting on transactions or market trends."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "18:44",
+      "summary": "The article provides updates on the sales progress of Hong Kong's 'Home Ownership Scheme 2024' (居屋2024), detailing the number of units sold, remaining units, and the selection process for applicants. It also mentions the introduction of a new quota system to give single applicants a better chance at popular urban estates.",
+      "website": "https://ps.hket.com/article/3956609/%E5%B1%85%E5%B1%8B2024%E6%8F%80%E6%A8%93%EF%BD%9C%E8%A7%80%E5%A1%98%E5%AE%89%E6%9F%8F%E8%8B%91%E6%96%99%E6%88%90%E7%AC%AC%E4%B8%89%E5%80%8B%E5%94%AE%E7%BD%84%E5%B1%8B%E8%8B%91%20%20%E5%B0%9A%E5%89%A9%E5%96%AE%E4%BD%8D%E5%B1%AF%E9%96%80%E5%85%86%E6%B9%96%E8%8B%91%E4%BD%949%E6%88%90-%E4%B8%8D%E6%96%B7%E6%9B%B4%E6%96%B0-?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content focuses on market updates, sales progress, and policy details related to Hong Kong's public housing scheme, making it a 'news' article rather than a transaction report."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "17:57",
+      "summary": "The article discusses the considerations for buying property for rental income in Hong Kong, highlighting that while rental yields may appear attractive, additional costs such as stamp duty, agent commissions, and maintenance fees significantly reduce actual returns. It uses the example of a recent transaction in Tai Wai's Pavilia Farm to illustrate these points.",
+      "website": "https://ps.hket.com/article/3988215/%E5%88%86%E6%9E%90%EF%BD%9C%E8%B2%B7%E6%A8%93%E6%94%B6%E7%A7%9F%20%E5%88%87%E5%8B%BF%E5%8F%AA%E8%A8%88%E7%A7%9F%E9%87%91%E5%9B%9E%E5%A0%B1%E7%8E%87...?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content primarily provides market analysis and advice on rental property investments, making it a 'news' type article, but it also includes a specific transaction example to support its points."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "17:15",
+      "summary": "The article discusses a sustainability-focused partnership between Kering Group and Swire Properties to enhance ESG performance in retail stores across China and Hong Kong. The collaboration includes participation in Swire Properties' 'Green Retail Partnership' program, focusing on sustainable design, data sharing, and operational improvements.",
+      "website": "https://ps.hket.com/article/3988406/%E5%A4%AA%E5%8F%A4%E5%9C%B0%E7%94%A2%E8%88%87%E9%96%8B%E9%9B%B2%E9%9B%86%E5%9C%98%E5%90%88%E4%BD%9C%20%20%20%E6%8F%90%E5%8D%87%E9%9B%B6%E5%94%AE%E5%BA%97%E8%88%96%E5%8F%AF%E6%8C%81%E7%BA%8C%E7%99%BC%E5%B1%95%E8%A1%A8%E7%8F%BE?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content is about a corporate partnership and sustainability initiatives in retail spaces, which is relevant to real estate market news but not about specific transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "16:26",
+      "summary": "The article clarifies rumors about the sale of a property owned by Li Ka-shing at 79 Deep Water Bay Road, stating that there are no plans to sell it and that the rumors are unfounded. It also warns against spreading or believing such misinformation due to the prevalence of scams.",
+      "website": "https://ps.hket.com/article/3988361/%E9%95%B7%E5%92%8C%E4%B8%BB%E5%B8%AD%E6%9D%8E%E6%BE%A4%E9%89%85%EF%BC%9A%E5%BE%9E%E6%B2%92%E6%89%93%E7%AE%97%E5%87%BA%E5%94%AE%E6%B7%B1%E6%B0%B4%E7%81%A3%E9%81%9379%E8%99%9F%20%20%E6%9C%89%E9%97%9C%E6%B6%88%E6%81%AF%E5%85%A8%E5%B1%AC%E8%99%9B%E6%A7%8B%E5%8F%8A%E7%A9%BF%E9%91%BF%E9%99%84%E6%9C%83?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The article discusses market rumors and provides a clarification from the property owner, making it relevant to real estate market news."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "15:45",
+      "summary": "The article discusses the naming and upcoming launch of a new residential project '嘉居·天后' (Ka Ju · Tin Hau) by developer K. Wah International in Tin Hau, Hong Kong. The project, located at 31-33 King's Road, will offer 74 units primarily consisting of 2-3 bedroom apartments, with pricing referenced to nearby luxury properties. The project is expected to be completed by November 5, 2026, and includes a 3,000 sq ft retail podium. The developer also anticipates a rise in both prices and transaction volumes in the new home market.",
+      "website": "https://ps.hket.com/article/3988227/%E5%98%89%E8%8F%AF%E8%8B%B1%E7%9A%87%E9%81%93%E9%A0%85%E7%9B%AE%E5%91%BD%E5%90%8D%E5%98%89%E5%B1%85%C2%B7%E5%A4%A9%E5%90%8E%20%20%E6%8F%90%E4%BE%9B74%E4%BC%99%E5%AD%A3%E5%85%A7%E6%8E%A8%E5%94%AE?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content focuses on market news about a new residential project launch, including details about the developer, unit types, pricing strategy, and market outlook, rather than reporting on specific transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "15:44",
+      "summary": "The article discusses Hong Kong's real estate market trends in July 2025, noting a slight decline in overall property transactions but highlighting sustained activity with over 7,000 deals for the second consecutive month. It attributes the market's resilience to factors like lower interest rates, favorable mortgage conditions, and strong sales in both new and secondary markets.",
+      "website": "https://ps.hket.com/article/3988326/%E4%B8%AD%E5%8E%9F%EF%BC%9A%E6%95%B4%E9%AB%94%E6%A8%93%E5%AE%87%E8%B2%B7%E8%B3%A3%E9%80%A3%E7%BA%8C%E5%85%A9%E6%9C%88%E4%BC%81%E7%A9%A97%E5%8D%83%E5%AE%97%E4%BB%A5%E4%B8%8A?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content provides market analysis and trends rather than specific transaction details, making it a 'news' type article."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "15:42",
+      "summary": "The article discusses the latest 'Midland Confidence Index' and property price trends in Hong Kong, highlighting a weekly increase in the index and property prices. It also notes regional variations in price changes and the distribution of discounted property listings across different areas and unit sizes.",
+      "website": "https://ps.hket.com/article/3988328/%E3%80%8C%E7%BE%8E%E8%81%AF%E4%BF%A1%E5%BF%83%E6%8C%87%E6%95%B8%E3%80%8D%E6%8C%89%E5%91%A8%E5%8D%871.2-%E3%80%80%E6%A8%93%E5%83%B9%E6%8C%87%E6%95%B8%E9%80%A3%E5%8D%872%E5%91%A8?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content focuses on market analysis, trends, and regional price variations rather than specific property transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "15:37",
+      "summary": "The article discusses how the narrowing price gap between subsidized housing and private residential properties in Hong Kong is influencing buyer preferences, with more buyers opting for private properties. However, an expected surge in subsidized housing supply may pressure the private market and slow overall recovery. Specific examples and data from districts like Kai Tak and Kwun Tong are provided to illustrate the trend.",
+      "website": "https://ps.hket.com/article/3988323/%E4%BB%B2%E9%87%8F%E8%81%AF%E8%A1%8C%EF%BC%9A%E8%B3%87%E5%8A%A9%E5%87%BA%E5%94%AE%E6%88%BF%E5%B1%8B%E5%92%8C%E7%A7%81%E6%A8%93%E5%83%B9%E6%A0%BC%E5%B7%AE%E8%B7%9D%E6%94%B6%E7%AA%84%20%E8%B2%B7%E5%AE%B6%E8%BD%89%E6%8A%95%E7%A7%81%E6%A8%93%E5%B8%82%E5%A0%B4%E8%B6%A8%E5%A2%9E?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content provides market analysis and trends related to Hong Kong's real estate, focusing on the dynamics between subsidized and private housing markets."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "12:49",
+      "summary": "The article discusses the narrowing corridors in newly built private residential buildings in Hong Kong, comparing them to older public housing estates. It highlights public dissatisfaction with the shrinking living spaces and the shift away from communal areas in modern housing designs.",
+      "website": "https://ps.hket.com/article/3986256/%E7%B6%B2%E7%B5%A1%E7%86%B1%E8%A9%B1%EF%BD%9C%E5%9C%B0%E6%A8%99%E7%B4%9A%E6%96%B0%E7%9B%A4%E3%80%8C%E5%91%A2%E5%80%8B%E8%A8%AD%E8%A8%88%E3%80%8D%E7%AB%9F%E8%BC%B8%E4%BF%BE%E5%85%AC%E5%B1%8B%EF%BC%9F%E7%B6%B2%E6%B0%91%E5%9B%9E%E6%86%B6%EF%BC%9A%E5%85%AC%E5%B1%8B%E5%91%A2%E5%80%8B%E4%BD%8D%E4%BB%A5%E5%89%8D%E4%BB%B2%E5%8F%AF%E4%BB%A5%E6%89%93%E9%BA%BB%E9%9B%80%EF%BC%81?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content focuses on market trends and public opinion regarding housing design rather than specific real estate transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "12:24",
+      "summary": "The article discusses the new residential project '維港‧灣畔' (Victoria Harbour · Waterfront) in Kai Tak, highlighting its extensive clubhouse facilities and design inspired by super yachts. It features over 50 amenities, including a 50-meter-long Bali-themed outdoor pool and a Mediterranean-style indoor pool.",
+      "website": "https://ps.hket.com/article/3987392/%E6%96%B0%E7%9B%A4%E5%85%A8%E9%9D%A2%E7%9D%87%EF%BD%9C%E5%95%9F%E5%BE%B7%E7%B6%AD%E6%B8%AF%E2%80%A7%E7%81%A3%E7%95%94%E6%9C%83%E6%89%80%E9%80%A3%E5%9C%92%E6%9E%97%E9%9D%A2%E7%A9%8D%E9%80%BE12%E8%90%AC%E5%91%8E%20%20%E8%A8%AD50%E7%B1%B3%E9%95%B7%E5%B3%87%E9%87%8C%E5%9C%92%E6%9E%97%E6%88%B6%E5%A4%96%E6%B3%B3%E6%B1%A0?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content focuses on market news about a new development's amenities and design, not specific transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "11:19",
+      "summary": "The article discusses the current Hong Kong interbank offered rate (HIBOR) trends, specifically the 1-month HIBOR rate, which affects mortgage rates. It compares HIBOR-linked mortgage rates with fixed-rate mortgages and provides examples of monthly repayments for a HK$4 million loan.",
+      "website": "https://ps.hket.com/article/2583277/H%E6%8C%89%E6%83%85%E5%A0%B1%EF%BD%9C1%E5%80%8B%E6%9C%88%E6%8B%86%E6%81%AF%E4%BB%8A%E5%A0%B10.93%E5%8E%98%20%20%E8%BC%83%E5%B0%8D%E4%B8%8A%E4%B8%80%E5%80%8B%E4%BA%A4%E6%98%93%E6%97%A5%E8%B7%8C6%E9%BB%9E%E5%AD%90%20-8%E6%9C%884%E6%97%A5%E6%9B%B4%E6%96%B0-?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content focuses on mortgage rate trends, bank offerings, and financial analysis rather than specific property transactions."
+    },
+    {
+      "source": "HKET",
+      "asset_type": "N/A",
+      "topic": "10:29",
+      "summary": "The article discusses the Hong Kong retail property market, noting that despite initial declines in retail sales and changes in consumer behavior, there is optimism for increased leasing activity in the latter half of the year due to adjusted rental prices. It highlights the impact of outbound tourism and shifting spending patterns on the market.",
+      "website": "https://ps.hket.com/article/3988132/%E6%8A%95%E8%B3%87%E6%94%BB%E7%95%A5%EF%BD%9C%E4%BB%B2%E9%87%8F%E8%81%AF%E8%A1%8C%E9%99%B3%E6%B0%B8%E6%85%A7%EF%BC%9A%E8%88%96%E7%A7%9F%E5%A4%A7%E5%B9%85%E8%AA%BF%E6%95%B4%20%E9%A4%90%E9%A3%B2%E6%A5%AD%E7%A9%8D%E6%A5%B5%E6%B1%B0%E5%BC%B1%E7%95%99%E5%BC%B7?mtc=60037",
+      "date": "04/08/2025",
+      "validation_reason": "The content focuses on market trends and analysis rather than specific property transactions."
+    },
+    {
+      "source": "星島頭條",
+      "asset_type": "N/A",
+      "topic": "地產",
+      "summary": "The article discusses the aftermath of residential fires in Hong Kong, highlighting the importance of proper damage assessment and insurance claims. It also includes various real estate market updates, such as new property sales, rental trends, and transaction records.",
+      "website": "https://www.stheadline.com/property/地產",
+      "date": "03/08/2025",
+      "validation_reason": "The content primarily focuses on market news, including fire-related insurance issues and general real estate market updates, rather than specific property transactions."
+    },
+    {
+      "source": "星島頭條",
+      "asset_type": "N/A",
+      "topic": "樓市動向",
+      "summary": "The article primarily discusses a statement by Li Zeju, chairman of CK Hutchison Holdings, clarifying that there are no plans to sell the property at 79 Deep Water Bay Road, contrary to earlier rumors. It also touches on various real estate market trends and transactions in Hong Kong.",
+      "website": "https://www.stheadline.com/realtime-property/樓市動向",
+      "date": "03/08/2025",
+      "validation_reason": "The content is relevant as it discusses real estate market news, including clarifications on property sales rumors and mentions of various transactions and market trends."
+    }
+  ],
+  "timestamp": "2025-08-04T23:40:47.327093",
+  "config_used": {
+    "headless": false,
+    "min_transaction_value": 30000000,
+    "min_area_sqft": 3000
+  }
+}
