@@ -19,13 +19,15 @@ import sys
 import logging
 import argparse
 from datetime import datetime, timedelta
-from utils.house852_scraper import House852Scraper
+from utils.consol_scraper import House852Scraper
 from utils.ai_categorizer import DeepSeekCategorizer
 from utils.transaction_filter import filter_transactions
 from utils.detail_extractor import DetailExtractor
 from utils.excel_formatter import ExcelFormatter
 from utils.centaline_parser import CentalineParser
 from utils.midland_parser import MidlandParser
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 import os
 
 
@@ -68,12 +70,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Disable httpx INFO logging (200 OK messages)
+logging.getLogger('httpx').setLevel(logging.WARNING)
+
 
 def get_date_input(prompt: str) -> datetime:
     """
     Get date input from user with validation
-    
-    Args:
+        
+        Args:
         prompt: Prompt message to display
         
     Returns:
@@ -99,7 +104,7 @@ def main():
     parser.add_argument('--start-date', help='Start date (YYYY-MM-DD). Default: smart range based on day of week')
     parser.add_argument('--end-date', help='End date (YYYY-MM-DD). Default: smart range based on day of week')
     parser.add_argument('--interactive', action='store_true', help='Interactive mode with prompts')
-    parser.add_argument('--quick', action='store_true', help='Quick mode: process only first 10-20 articles with AI')
+    parser.add_argument('--quick', action='store_true', default=False, help='Quick mode: process only first 15 articles with AI')
     
     args = parser.parse_args()
     
@@ -164,11 +169,9 @@ def main():
     
     try:
         # Step 1: Scrape news articles (title + preview only, no full content yet)
-        print("\n[STEP 1/3] Scraping news articles from 852.house...")
+        print("\n[STEP 1/6] Scraping article list from primary source")
         scraper = House852Scraper()
         
-        # Get articles without fetching full content first
-        print("  → Fetching article list with previews...")
         html_pages = []
         page = 1
         while page <= 20:  # Max 20 pages
@@ -191,73 +194,116 @@ def main():
             page += 1
         
         if not html_pages:
-            print("\nNo articles found in the specified date range")
+            print("No articles found in date range")
             sys.exit(0)
         
-        print(f"  → Found {len(html_pages)} articles in date range")
+        print(f"✓ Found {len(html_pages)} articles in date range")
         
-        # Step 1.5: Filter high-value transactions BEFORE AI processing
+        # Step 1.5: Filter high-value transactions and keep all news
         print(f"\n  → Filtering for major transactions (>20M HKD or >=2000 sqft)...")
-        filtered_articles, total, filtered_count = filter_transactions(html_pages)
+        transaction_articles, total, filtered_count = filter_transactions(html_pages)
         
-        print(f"  → Filtered to {filtered_count} high-value articles (from {total} total)")
-        print(f"  → This saves ~{total - filtered_count} unnecessary API calls!")
+        # Also categorize to separate news from transactions early
+        print(f"  → Pre-categorizing to identify news articles...")
+        categorizer = DeepSeekCategorizer()
         
-        articles = filtered_articles
+        # Quick categorization to identify news (using just title + tags)
+        news_candidates = []
+        for article in html_pages:
+            title = article.get('title', '').lower()
+            tags = ' '.join(article.get('tags', [])).lower()
+            text = f"{title} {tags}"
+            
+            # If no transaction keywords, likely news
+            trans_keywords = ['成交', '沽', '售', '租', '億', '萬', '呎']
+            if not any(kw in text for kw in trans_keywords):
+                news_candidates.append(article)
         
-        if not articles:
-            print("\nNo high-value transactions found in the specified date range")
-            sys.exit(0)
+        print(f"  → Transactions: {filtered_count} (from {total} total)")
+        print(f"  → News candidates: {len(news_candidates)}")
+        print(f"  → API calls saved: ~{total - filtered_count - len(news_candidates)}")
         
-        print(f"\n✓ Successfully filtered {len(articles)} major transaction articles")
+        # Combine filtered transactions and news candidates
+        articles = transaction_articles + news_candidates
         
-        # Quick mode: limit to first 10-20 articles
+        print(f"\n✓ Total to process: {len(articles)} articles ({len(transaction_articles)} transactions + {len(news_candidates)} news)")
+        
+        # Quick mode: limit to first articles
         if args.quick:
             original_count = len(articles)
-            articles = articles[:15]  # Take first 15 for quick testing
+            articles = articles[:20]  # Take first 20 for quick testing
             print(f"  → Quick mode: Processing first {len(articles)} articles (out of {original_count})")
         
-        # Step 2: Categorize and separate transactions from news
-        print("\n[STEP 2/4] Categorizing articles using DeepSeek AI...")
+        print(f"\n[STEP 3/6] AI categorization using DeepSeek (parallel: 10 workers)")
         categorizer = DeepSeekCategorizer()
         categorized_articles = categorizer.categorize_batch(articles)
         
-        # Separate by category
+        # Separate articles by category
         transactions = [a for a in categorized_articles if a.get('category') == 'transactions']
-        news_articles = [a for a in categorized_articles if a.get('category') in ['news', 'new_property']]
+        # Exclude new_property from news - only include 'news' category
+        news_articles = [a for a in categorized_articles if a.get('category') == 'news']
+        excluded_articles = [a for a in categorized_articles if a.get('category') in ['exclude', 'new_property']]
         
-        print(f"\n✓ Categorized: {len(transactions)} transactions, {len(news_articles)} news")
+        print(f"✓ Categorized: {len(transactions)} transactions + {len(news_articles)} news")
+        if excluded_articles:
+            print(f"  → Excluded: {len(excluded_articles)} articles (non-valuation, quality issues, etc.)")
         
-        # Step 3: Fetch full content for detail extraction
-        print("\n[STEP 3/4] Fetching full article content...")
+        print(f"\n[STEP 4/6] Fetching full article content")
+        # Only fetch content for articles that will be included (exclude already filtered by AI)
         all_to_fetch = transactions + news_articles
         for article in all_to_fetch:
             article_data = scraper.fetch_article_content(article['url'])
             article['full_content'] = article_data['content']
-            article['source'] = article_data.get('source', '852.house')
+            article['source'] = article_data.get('source', 'Company C')
             article['fetch_success'] = article_data['success']
-        print(f"  → Fetched content for {len(all_to_fetch)} articles")
+        print(f"✓ Fetched {len(all_to_fetch)} articles (excluded {len(excluded_articles)} articles skipped)")
         
-        # Step 4: Extract detailed information using AI
-        print("\n[STEP 4/4] Extracting detailed information using AI...")
+        print(f"\n[STEP 5/6] AI detail extraction (parallel: 10 workers)")
         extractor = DetailExtractor()
         
-        # Extract transaction details
-        print(f"  → Extracting transaction details for {len(transactions)} articles...")
-        for article in transactions:
-            details = extractor.extract_transaction_details(article)
-            article['details'] = details
+        print(f"Extracting {len(transactions)} transaction details...")
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_article = {executor.submit(extractor.extract_transaction_details, article): article 
+                               for article in transactions}
+            
+            for future in tqdm(as_completed(future_to_article), total=len(transactions), 
+                              desc="Transactions", unit="article"):
+                try:
+                    article = future_to_article[future]
+                    details = future.result()
+                    article['details'] = details
+                except Exception as e:
+                    logger.error(f"Error extracting transaction: {e}")
         
-        # Extract news summaries
-        print(f"  → Extracting news summaries for {len(news_articles)} articles...")
-        for article in news_articles:
-            details = extractor.extract_news_summary(article)
-            article['details'] = details
+        if news_articles:
+            print(f"\nExtracting {len(news_articles)} news summaries (will filter out General)...")
+            filtered_news = []
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                future_to_article = {executor.submit(extractor.extract_news_summary, article): article 
+                                   for article in news_articles}
+                
+                for future in tqdm(as_completed(future_to_article), total=len(news_articles), 
+                                  desc="News", unit="article"):
+                    try:
+                        article = future_to_article[future]
+                        details = future.result()
+                        article['details'] = details
+                        # Only keep Residential and Commercial
+                        asset_cat = details.get('asset_category', '')
+                        if asset_cat in ['Residential', 'Commercial']:
+                            filtered_news.append(article)
+                    except Exception as e:
+                        logger.error(f"Error extracting news: {e}")
+            
+            news_articles = filtered_news
+            print(f"✓ Kept {len(news_articles)} market-related news (excluded {225 - len(news_articles)} General)")
+        else:
+            print(f"No news articles to process")
         
-        print(f"\n✓ Completed detail extraction")
+        print(f"✓ Detail extraction complete")
         
-        # Step 5: Load Company A transactions from manual data file
-        print("\n[STEP 5] Loading Company A residential transactions...")
+        print(f"\n[STEP 6/6] Loading additional data sources")
+        print("Loading Company A residential transactions...")
         centaline_transactions = []
         if os.path.exists("centaline_data.txt"):
             try:
@@ -272,17 +318,16 @@ def main():
                     # Filter by date
                     centaline_transactions = [t for t in all_company_a 
                                             if t.get('date_obj') and start_date <= t['date_obj'] <= end_date]
-                    print(f"  ✓ Loaded {len(centaline_transactions)} Company A transactions")
+                    print(f"✓ Company A: {len(centaline_transactions)} transactions")
                 else:
-                    print(f"  ℹ️  No data in centaline_data.txt")
+                    print(f"ℹ️  centaline_data.txt is empty")
             except Exception as e:
-                logger.error(f"Centaline error: {e}")
-                print(f"  ⚠️  Centaline error: {e}")
+                logger.error(f"Company A error: {e}")
+                print(f"⚠️  Company A error: {e}")
         else:
-            print(f"  ℹ️  centaline_data.txt not found")
+            print(f"ℹ️  centaline_data.txt not found")
         
-        # Step 6: Load Company B transactions from manual data file
-        print("\n[STEP 6] Loading Company B commercial transactions...")
+        print("Loading Company B commercial transactions...")
         midland_transactions = []
         if os.path.exists("midland_data.txt"):
             try:
@@ -298,17 +343,16 @@ def main():
                     midland_transactions = [t for t in all_company_b 
                                           if t.get('date_obj') and start_date <= t['date_obj'] <= end_date
                                           and float(t.get('area', 0)) >= 3000.0]
-                    print(f"  ✓ Loaded {len(midland_transactions)} Company B transactions")
+                    print(f"✓ Company B: {len(midland_transactions)} transactions")
                 else:
-                    print(f"  ℹ️  No data in midland_data.txt")
+                    print(f"ℹ️  midland_data.txt is empty")
             except Exception as e:
-                logger.error(f"Midland error: {e}")
-                print(f"  ⚠️  Midland error: {e}")
+                logger.error(f"Company B error: {e}")
+                print(f"⚠️  Company B error: {e}")
         else:
-            print(f"  ℹ️  midland_data.txt not found")
+            print(f"ℹ️  midland_data.txt not found")
         
-        # Save to Excel with new format
-        print("\n[FINAL STEP] Saving results to Excel...")
+        print(f"\n[FINAL] Generating Excel report")
         formatter = ExcelFormatter()
         output_file = formatter.write_excel(transactions, news_articles, centaline_transactions,
                                            midland_transactions, start_date, end_date)
@@ -350,7 +394,7 @@ def main():
         print(f"\n❌ Error: {e}")
         print("Check 852house_scraper.log for details")
         return 1
-
+    
 
 if __name__ == "__main__":
     exit_code = main()

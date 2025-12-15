@@ -42,9 +42,6 @@ asset_types:
 
 # Data Source Mapping
 data_sources:
-  company_a: "Centaline"
-  company_b: "Midland ICI"
-  company_c: "Primary Source"
 
 # Excel Output
 excel:
@@ -53,11 +50,11 @@ excel:
 
 ### 3. Prepare Data Files
 
-**Company A Data** (`centaline_data.txt`):
+**Company A Data**:
 - Paste residential transaction data
 - Filter: >= 20M HKD
 
-**Company B Data** (`midland_data.txt`):
+**Company B Data**:
 - Paste commercial transaction data  
 - Filter: >= 3000 sqft
 

@@ -25,8 +25,8 @@ class ExcelFormatter:
     
     def get_next_monday_filename(self, end_date: datetime) -> str:
         """
-        Get filename based on next Monday after period end
-        Format: YYMMDD (e.g., 251215 for 15 Dec 2025)
+        Get filename based on next Monday after period end + current time
+        Format: YYMMDD_HHMMSS (e.g., 251215_103045 for 15 Dec 2025, 10:30:45)
         """
         # Find next Monday
         days_until_monday = (7 - end_date.weekday()) % 7
@@ -34,32 +34,35 @@ class ExcelFormatter:
             days_until_monday = 7
         next_monday = end_date + timedelta(days=days_until_monday)
         
-        # Format as YYMMDD
-        return next_monday.strftime('%y%m%d')
+        # Format as YYMMDD_HHMMSS (date + current time)
+        current_time = datetime.now().strftime('%H%M%S')
+        return f"{next_monday.strftime('%y%m%d')}_{current_time}"
     
     def extract_source(self, article: Dict) -> str:
         """Extract source from article content"""
         # First check if source was extracted from article page
         source = article.get('source', 'Company C')
         
-        # Don't expose internal source names
-        if source and source not in ['Company A', 'Company B', 'Company C']:
-            return source  # Keep actual news source names
+        # Don't expose internal source names - if we have a real source name, use it
+        if source and source not in ['Company A', 'Company B', 'Company C', '852.house']:
+            return source  # Keep actual news source names (e.g., 經濟日報, 星島日報)
         
-        if 'source' in article and article['source'] not in ['852.house', 'Company C']:
-            return article['source']
+        # If source is still Company C, check if it's in the known sources list
+        if source == 'Company C':
+            # Check tags as fallback
+            tags = article.get('tags', [])
+            sources = self.config.get('sources', [])
+            
+            for tag in tags:
+                for known_source in sources:
+                    if known_source in tag:
+                        return known_source
+            
+            # Default to 852.house only if we really can't find anything
+            return "852.house"
         
-        # Check tags as fallback
-        tags = article.get('tags', [])
-        sources = self.config.get('sources', [])
-        
-        for tag in tags:
-            for source in sources:
-                if source in tag:
-                    return source
-        
-        # Default to 852.house
-        return "852.house"
+        # If source is 852.house or something else, return as is
+        return source if source else "852.house"
     
     def deduplicate_transactions(self, articles: List[Dict]) -> List[Dict]:
         """
@@ -114,8 +117,12 @@ class ExcelFormatter:
         # Deduplicate first
         deduped_articles = self.deduplicate_transactions(articles)
         
+        # Filter out rows with N/A property names
+        valid_articles = [a for a in deduped_articles 
+                         if a.get('details', {}).get('property', 'N/A') != 'N/A']
+        
         data = []
-        for idx, article in enumerate(deduped_articles, 1):
+        for idx, article in enumerate(valid_articles, 1):
             details = article.get('details', {})
             
             row = {
@@ -145,10 +152,19 @@ class ExcelFormatter:
         return pd.DataFrame(data)
     
     def format_centaline(self, transactions: List[Dict], filename: str) -> pd.DataFrame:
-        """Format Centaline transactions sheet"""
+        """Format Centaline/Midland transactions sheet"""
         data = []
         
         for idx, trans in enumerate(transactions, 1):
+            # Determine source and category
+            source = trans.get('source', 'Company A')
+            if 'Company B' in source:
+                category = 'Commercial'
+                source_name = 'Midland'
+            else:
+                category = 'Residential'
+                source_name = 'Centaline'
+            
             row = {
                 'No.': idx,
                 'Date': trans.get('date', 'N/A'),
@@ -163,8 +179,8 @@ class ExcelFormatter:
                 'Transaction Price': trans.get('price_numeric', trans.get('price', 'N/A')),
                 'Unit Price': trans.get('unit_price', 'N/A'),
                 'Nature': trans.get('nature', 'Sales'),
-                'Category': 'Residential',
-                'Source': 'Centaline',
+                'Category': category,
+                'Source': source_name,
                 'Filename': filename
             }
             data.append(row)
@@ -172,9 +188,10 @@ class ExcelFormatter:
         return pd.DataFrame(data)
     
     def format_news(self, articles: List[Dict], filename: str) -> pd.DataFrame:
-        """Format news sheet"""
+        """Format news sheet - renumber after all filtering"""
         data = []
         
+        # Renumber starting from 1 after all filters applied
         for idx, article in enumerate(articles, 1):
             details = article.get('details', {})
             
@@ -298,61 +315,72 @@ class ExcelFormatter:
                    centaline: List[Dict], midland: List[Dict], 
                    start_date: datetime, end_date: datetime) -> str:
         """Write formatted Excel file"""
-        # Get filename
-        filename = self.get_next_monday_filename(end_date)
-        filepath = os.path.join(self.output_dir, f"property_report_{filename}.xlsx")
+        # Get filename with timestamp for Excel file
+        excel_filename = self.get_next_monday_filename(end_date)
+        filepath = os.path.join(self.output_dir, f"property_report_{excel_filename}.xlsx")
+        
+        # Filename for tabs (just date, no time)
+        days_until_monday = (7 - end_date.weekday()) % 7
+        if days_until_monday == 0:
+            days_until_monday = 7
+        next_monday = end_date + timedelta(days=days_until_monday)
+        tab_filename = next_monday.strftime('%y%m%d')
         
         print(f"\n  → Creating Excel file: {filepath}")
-        print(f"  → Filename code: {filename} (next Monday after period end)")
+        print(f"  → Tab filename code: {tab_filename}")
         
         with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
             # Transactions sheet (always create)
-            df_trans = self.format_transactions(transactions, filename) if transactions else pd.DataFrame()
+            df_trans = self.format_transactions(transactions, tab_filename) if transactions else pd.DataFrame()
             if not df_trans.empty:
-                df_trans.to_excel(writer, sheet_name='Transactions', index=False)
-                self.format_worksheet(writer.book['Transactions'], is_transaction=True)
-                print(f"  → Transactions: {len(df_trans)} rows")
+                df_trans.to_excel(writer, sheet_name='major_trans', index=False)
+                self.format_worksheet(writer.book['major_trans'], is_transaction=True)
+                print(f"  → major_trans: {len(df_trans)} rows")
             else:
-                # Create empty sheet with headers
                 df_trans = pd.DataFrame(columns=['No.', 'Date', 'District', 'Property', 'Asset type', 
                                                  'Floor', 'Unit', 'Nature', 'Transaction price', 'Area', 
                                                  'Unit basis', 'Area/unit', 'Unit price', 'Yield', 
                                                  'Seller/Landlord', 'Buyer/Tenant', 'Source', 'URL', 
                                                  'Filename', 'Dedup Flag'])
-                df_trans.to_excel(writer, sheet_name='Transactions', index=False)
-                self.format_worksheet(writer.book['Transactions'], is_transaction=True)
-                print(f"  → Transactions: 0 rows (empty)")
+                df_trans.to_excel(writer, sheet_name='major_trans', index=False)
+                self.format_worksheet(writer.book['major_trans'], is_transaction=True)
+                print(f"  → major_trans: 0 rows (empty)")
             
-            # News sheet (always create)
-            df_news = self.format_news(news, filename) if news else pd.DataFrame()
+            # News sheet - deduplicate by topic
+            if news:
+                seen_topics = set()
+                unique_news = []
+                for article in news:
+                    topic = article.get('details', {}).get('topic', '')
+                    if topic and topic not in seen_topics:
+                        seen_topics.add(topic)
+                        unique_news.append(article)
+                news = unique_news
+                print(f"  → Deduplicated news: {len(unique_news)} unique (removed {len(seen_topics) - len(unique_news)} duplicates)")
+            
+            df_news = self.format_news(news, tab_filename) if news else pd.DataFrame()
             if not df_news.empty:
-                df_news.to_excel(writer, sheet_name='News', index=False)
-                self.format_worksheet(writer.book['News'], is_transaction=False)
-                print(f"  → News: {len(df_news)} rows")
+                df_news.to_excel(writer, sheet_name='news', index=False)
+                self.format_worksheet(writer.book['news'], is_transaction=False)
+                print(f"  → news: {len(df_news)} rows")
             else:
-                # Create empty sheet with headers
                 df_news = pd.DataFrame(columns=['No.', 'Date', 'Source', 'Asset type', 'Topic', 'Summary', 'URL', 'Filename'])
-                df_news.to_excel(writer, sheet_name='News', index=False)
-                self.format_worksheet(writer.book['News'], is_transaction=False)
-                print(f"  → News: 0 rows (empty)")
+                df_news.to_excel(writer, sheet_name='news', index=False)
+                self.format_worksheet(writer.book['news'], is_transaction=False)
+                print(f"  → news: 0 rows (empty)")
             
             # Trans_Commercial sheet - combine Centaline + Midland
             all_commercial = []
-            
-            # Add Centaline transactions
             if centaline:
                 all_commercial.extend(centaline)
-            
-            # Add Midland transactions
             if midland:
                 all_commercial.extend(midland)
             
-            # Create combined sheet
             if all_commercial:
-                df_commercial = self.format_centaline(all_commercial, filename)
+                df_commercial = self.format_centaline(all_commercial, tab_filename)
                 df_commercial.to_excel(writer, sheet_name='Trans_Commercial', index=False)
                 self._format_centaline_sheet(writer.book['Trans_Commercial'])
-                print(f"  → Trans_Commercial: {len(df_commercial)} rows ({len(centaline)} Centaline + {len(midland)} Midland)")
+                print(f"  → Trans_Commercial: {len(df_commercial)} rows")
             else:
                 df_commercial = pd.DataFrame(columns=['No.', 'Date', 'District', 'Asset type', 'Property', 
                                                      'Floor', 'Unit', 'Area basis', 'Unit basis', 'Area/Unit', 
@@ -361,6 +389,17 @@ class ExcelFormatter:
                 df_commercial.to_excel(writer, sheet_name='Trans_Commercial', index=False)
                 self._format_centaline_sheet(writer.book['Trans_Commercial'])
                 print(f"  → Trans_Commercial: 0 rows (empty)")
+            
+            # New Property sheet (empty template)
+            df_new_prop = pd.DataFrame(columns=['No.', 'Date', 'District', 'Property', 'Asset type', 
+                                               'Floor', 'Unit', 'Nature', 'Transaction Price_Min', 
+                                               'Transaction Price_Max', 'Area basis', 'Unit basis', 
+                                               'Area_Min', 'Area_Max', 'Unit Price_Min', 'Unit Price_Max', 
+                                               'Unit Price_Avg', 'Seller/Landlord', 'Source', 'URL', 
+                                               'Filename', 'Content'])
+            df_new_prop.to_excel(writer, sheet_name='new_property', index=False)
+            self.format_worksheet(writer.book['new_property'], is_transaction=True)
+            print(f"  → new_property: 0 rows (template)")
         
         print(f"\n✅ Excel file created: {filepath}")
         return filepath
