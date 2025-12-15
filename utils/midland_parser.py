@@ -36,22 +36,35 @@ class MidlandParser:
         i = 0
         
         while i < len(lines):
-            # Each transaction is 8 lines:
+            # Each transaction structure:
             # 0: Asset type (寫字樓/工商/舖位)
             # 1: Property details (District Property Floor Unit)
             # 2: Area (5,835 呎)
             # 3: Date (2025/12/13)
             # 4: Source (市場資訊/土地註冊處)
             # 5: Nature (租/售)
-            # 6: Price ($93,360 or $2.05億)
-            # 7: Unit price (@$16)
+            # For Lease (租): 6: Price, 7: Unit price (8 lines total)
+            # For Sales (售): 6: Price part 1, 7: Price part 2 (億/萬), 8: Unit price (9 lines total)
             
             if i + 7 < len(lines):
                 try:
-                    trans = self._parse_transaction_block(lines[i:i+8])
-                    if trans:
-                        transactions.append(trans)
-                    i += 8
+                    # Check if it's a sales transaction (price split across 2 lines)
+                    nature_line_idx = i + 5
+                    if nature_line_idx < len(lines) and lines[nature_line_idx] == '售':
+                        # Sales transaction - 9 lines
+                        if i + 8 < len(lines):
+                            trans = self._parse_transaction_block(lines[i:i+9], is_sales=True)
+                            if trans:
+                                transactions.append(trans)
+                            i += 9
+                        else:
+                            break
+                    else:
+                        # Lease transaction - 8 lines
+                        trans = self._parse_transaction_block(lines[i:i+8], is_sales=False)
+                        if trans:
+                            transactions.append(trans)
+                        i += 8
                     
                     # Skip "相關放盤" if it appears
                     if i < len(lines) and '相關' in lines[i]:
@@ -65,9 +78,10 @@ class MidlandParser:
         
         return transactions
     
-    def _parse_transaction_block(self, block: list) -> Dict:
-        """Parse 8-line transaction block"""
-        if len(block) < 8:
+    def _parse_transaction_block(self, block: list, is_sales: bool = False) -> Dict:
+        """Parse transaction block (8 lines for lease, 9 lines for sales)"""
+        min_lines = 9 if is_sales else 8
+        if len(block) < min_lines:
             return None
         
         trans = {
@@ -122,16 +136,31 @@ class MidlandParser:
             elif '售' in nature:
                 trans['nature'] = 'Sales'
             
-            # Line 6: Price
-            price_str = block[6]
-            trans['price'] = price_str
-            trans['price_numeric'] = self._parse_price(price_str)
-            
-            # Line 7: Unit price
-            unit_price_str = block[7]
-            price_match = re.search(r'@\$?([\d,]+)', unit_price_str)
-            if price_match:
-                trans['unit_price'] = price_match.group(1).replace(',', '')
+            # Price and Unit price handling
+            if is_sales:
+                # Sales: Price is split across lines 6 and 7, unit price is on line 8
+                price_part1 = block[6]  # e.g., "$2.05" or "$1,880"
+                price_part2 = block[7]  # e.g., "億" or "萬"
+                price_str = f"{price_part1}{price_part2}"  # Combine: "$2.05億" or "$1,880萬"
+                trans['price'] = price_str
+                trans['price_numeric'] = self._parse_price(price_str)
+                
+                # Line 8: Unit price
+                unit_price_str = block[8]
+                price_match = re.search(r'@\$?([\d,]+)', unit_price_str)
+                if price_match:
+                    trans['unit_price'] = price_match.group(1).replace(',', '')
+            else:
+                # Lease: Price on line 6, unit price on line 7
+                price_str = block[6]
+                trans['price'] = price_str
+                trans['price_numeric'] = self._parse_price(price_str)
+                
+                # Line 7: Unit price
+                unit_price_str = block[7]
+                price_match = re.search(r'@\$?([\d,]+)', unit_price_str)
+                if price_match:
+                    trans['unit_price'] = price_match.group(1).replace(',', '')
             
             return trans
             

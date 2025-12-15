@@ -7,10 +7,14 @@ import pandas as pd
 import yaml
 import os
 import re
+import logging
 from datetime import datetime, timedelta
 from typing import List, Dict
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
+from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 
 class ExcelFormatter:
@@ -22,6 +26,17 @@ class ExcelFormatter:
         
         self.output_dir = self.config['excel']['output_dir']
         os.makedirs(self.output_dir, exist_ok=True)
+        
+        # Initialize AI client for deduplication
+        deepseek_config = self.config.get('deepseek', {})
+        if deepseek_config.get('api_key'):
+            self.ai_client = OpenAI(
+                api_key=deepseek_config['api_key'],
+                base_url=deepseek_config.get('api_base', 'https://api.deepseek.com')
+            )
+            self.ai_model = deepseek_config.get('model', 'deepseek-chat')
+        else:
+            self.ai_client = None
     
     def get_next_monday_filename(self, end_date: datetime) -> str:
         """
@@ -117,29 +132,76 @@ class ExcelFormatter:
         # Deduplicate first
         deduped_articles = self.deduplicate_transactions(articles)
         
-        # Filter out rows with N/A property names
-        valid_articles = [a for a in deduped_articles 
-                         if a.get('details', {}).get('property', 'N/A') != 'N/A']
+        # Filter out rows with N/A property names AND missing area
+        valid_articles = []
+        for a in deduped_articles:
+            details = a.get('details', {})
+            property_name = details.get('property', 'N/A')
+            area = details.get('area', 'N/A')
+            
+            # Must have property name AND area
+            if property_name != 'N/A' and area != 'N/A':
+                # Ensure area is a valid number
+                try:
+                    float(str(area).replace(',', ''))
+                    valid_articles.append(a)
+                except (ValueError, AttributeError):
+                    # Area is not a valid number, skip
+                    continue
         
         data = []
         for idx, article in enumerate(valid_articles, 1):
             details = article.get('details', {})
+            
+            # Convert numeric fields to proper format
+            def to_numeric(value, default='N/A'):
+                if value == 'N/A' or value is None:
+                    return default
+                try:
+                    # Remove commas and convert
+                    num_str = str(value).replace(',', '').strip()
+                    if num_str and num_str != 'N/A':
+                        return float(num_str)
+                    return default
+                except (ValueError, AttributeError):
+                    return default
+            
+            price = to_numeric(details.get('price', 'N/A'), 'N/A')
+            area = to_numeric(details.get('area', 'N/A'), 'N/A')
+            unit_price = to_numeric(details.get('unit_price', 'N/A'), 'N/A')
+            yield_rate = details.get('yield_rate', 'N/A')
+            if yield_rate != 'N/A' and yield_rate is not None:
+                try:
+                    yield_rate = float(yield_rate)
+                except (ValueError, TypeError):
+                    yield_rate = 'N/A'
+            
+            # Determine area_basis based on asset_type
+            asset_type = details.get('asset_type', 'N/A')
+            if asset_type in ['住宅', '洋房']:
+                area_basis = 'NFA'
+            elif asset_type in ['寫字樓', '商鋪', '商舖', '工廈', '酒店', '停車位']:
+                area_basis = 'GFA'
+            else:
+                area_basis = 'NFA'  # Default to NFA
             
             row = {
                 'No.': idx,
                 'Date': details.get('date', 'N/A'),
                 'District': details.get('district', 'N/A'),
                 'Property': details.get('property', article.get('title', '')[:50]),
+                '': '',  # Empty column after Property
                 'Asset type': details.get('asset_type', 'N/A'),
                 'Floor': details.get('floor', 'N/A'),
                 'Unit': details.get('unit', 'N/A'),
                 'Nature': details.get('nature', 'N/A'),
-                'Transaction price': details.get('price', 'N/A'),
-                'Area': details.get('area', 'N/A'),
+                'Transaction price': price,
+                'Area': area,
+                'Area basis': area_basis,
                 'Unit basis': 'sqft',
-                'Area/unit': details.get('area', 'N/A'),
-                'Unit price': details.get('unit_price', 'N/A'),
-                'Yield': details.get('yield_rate', 'N/A'),
+                'Area/unit': area,
+                'Unit price': unit_price,
+                'Yield': yield_rate,
                 'Seller/Landlord': details.get('seller', 'N/A'),
                 'Buyer/Tenant': details.get('buyer', 'N/A'),
                 'Source': self.extract_source(article),
@@ -155,6 +217,18 @@ class ExcelFormatter:
         """Format Centaline/Midland transactions sheet"""
         data = []
         
+        def to_numeric(value, default='N/A'):
+            """Convert value to numeric, return default if not valid"""
+            if value == 'N/A' or value is None:
+                return default
+            try:
+                num_str = str(value).replace(',', '').strip()
+                if num_str and num_str != 'N/A':
+                    return float(num_str)
+                return default
+            except (ValueError, AttributeError):
+                return default
+        
         for idx, trans in enumerate(transactions, 1):
             # Determine source and category
             source = trans.get('source', 'Company A')
@@ -165,19 +239,33 @@ class ExcelFormatter:
                 category = 'Residential'
                 source_name = 'Centaline'
             
+            # Convert to numeric values
+            area = to_numeric(trans.get('area', trans.get('area_unit', 'N/A')), 'N/A')
+            price = to_numeric(trans.get('price_numeric', trans.get('price', 'N/A')), 'N/A')
+            unit_price = to_numeric(trans.get('unit_price', 'N/A'), 'N/A')
+            
+            # Determine area_basis based on asset_type
+            asset_type = trans.get('asset_type', '住宅')
+            if asset_type in ['住宅', '洋房']:
+                area_basis = 'NFA'
+            elif asset_type in ['寫字樓', '商鋪', '商舖', '工廈', '酒店', '停車位']:
+                area_basis = 'GFA'
+            else:
+                area_basis = 'NFA'  # Default to NFA for residential
+            
             row = {
                 'No.': idx,
                 'Date': trans.get('date', 'N/A'),
                 'District': trans.get('district', 'N/A'),
-                'Asset type': trans.get('asset_type', '住宅'),
+                'Asset type': asset_type,
                 'Property': trans.get('property', 'N/A'),
                 'Floor': trans.get('floor', 'N/A'),
                 'Unit': trans.get('unit', 'N/A'),
-                'Area basis': trans.get('area_basis', 'NFA'),
+                'Area basis': area_basis,
                 'Unit basis': 'sqft',
-                'Area/Unit': trans.get('area', trans.get('area_unit', 'N/A')),
-                'Transaction Price': trans.get('price_numeric', trans.get('price', 'N/A')),
-                'Unit Price': trans.get('unit_price', 'N/A'),
+                'Area/Unit': area,
+                'Transaction Price': price,
+                'Unit Price': unit_price,
                 'Nature': trans.get('nature', 'Sales'),
                 'Category': category,
                 'Source': source_name,
@@ -227,22 +315,24 @@ class ExcelFormatter:
                 'B': 12,  # Date
                 'C': 12,  # District
                 'D': 30,  # Property
-                'E': 10,  # Asset type
-                'F': 8,   # Floor
-                'G': 8,   # Unit
-                'H': 8,   # Nature
-                'I': 15,  # Transaction price
-                'J': 10,  # Area
-                'K': 10,  # Unit basis
-                'L': 10,  # Area/unit
-                'M': 12,  # Unit price
-                'N': 10,  # Yield
-                'O': 20,  # Seller/Landlord
-                'P': 20,  # Buyer/Tenant
-                'Q': 12,  # Source
-                'R': 15,  # URL
-                'S': 10,  # Filename
-                'T': 25   # Dedup Flag
+                'E': 3,   # Empty column
+                'F': 10,  # Asset type
+                'G': 8,   # Floor
+                'H': 8,   # Unit
+                'I': 8,   # Nature
+                'J': 15,  # Transaction price
+                'K': 10,  # Area
+                'L': 10,  # Area basis
+                'M': 10,  # Unit basis
+                'N': 10,  # Area/unit
+                'O': 12,  # Unit price
+                'P': 10,  # Yield
+                'Q': 20,  # Seller/Landlord
+                'R': 20,  # Buyer/Tenant
+                'S': 12,  # Source
+                'T': 15,  # URL
+                'U': 10,  # Filename
+                'V': 25   # Dedup Flag
             }
         else:
             # News columns
@@ -311,6 +401,186 @@ class ExcelFormatter:
         
         worksheet.freeze_panes = 'A2'
     
+    def ai_deduplicate_news(self, articles: List[Dict]) -> List[Dict]:
+        """
+        Use AI to deduplicate highly similar news articles by comparing topic+summary pairs
+        
+        Args:
+            articles: List of news articles with details
+            
+        Returns:
+            List of deduplicated articles
+        """
+        if not self.ai_client or len(articles) <= 1:
+            return articles
+        
+        # Group articles by date and similar topic prefix to reduce comparisons
+        date_groups = {}
+        for article in articles:
+            date = article.get('details', {}).get('date', article.get('date', ''))
+            topic = article.get('details', {}).get('topic', '')
+            
+            if topic:
+                # Normalize topic for grouping
+                topic_normalized = topic.replace(' ', '').replace('\u3000', '').lower()
+                # Use date + first 15 chars of topic as group key
+                group_key = f"{date}_{topic_normalized[:15]}"
+            else:
+                group_key = f"{date}_no_topic"
+            
+            if group_key not in date_groups:
+                date_groups[group_key] = []
+            date_groups[group_key].append(article)
+        
+        # For each group, use AI to deduplicate
+        unique_articles = []
+        total_compared = 0
+        total_removed = 0
+        
+        for group_key, group_articles in date_groups.items():
+            if len(group_articles) == 1:
+                unique_articles.append(group_articles[0])
+                continue
+            
+            # Compare articles within the same group
+            group_unique = []
+            for article1 in group_articles:
+                topic1 = article1.get('details', {}).get('topic', '')
+                summary1 = article1.get('details', {}).get('summary', '')
+                
+                if not topic1:
+                    group_unique.append(article1)
+                    continue
+                
+                is_duplicate = False
+                for article2 in group_unique:
+                    topic2 = article2.get('details', {}).get('topic', '')
+                    summary2 = article2.get('details', {}).get('summary', '')
+                    
+                    if not topic2:
+                        continue
+                    
+                    # Use AI to check similarity
+                    total_compared += 1
+                    if self._are_articles_similar(topic1, summary1, topic2, summary2):
+                        is_duplicate = True
+                        total_removed += 1
+                        break
+                
+                if not is_duplicate:
+                    group_unique.append(article1)
+            
+            unique_articles.extend(group_unique)
+        
+        if total_compared > 0:
+            print(f"    → AI compared {total_compared} pairs, removed {total_removed} duplicates")
+        
+        return unique_articles
+    
+    def _are_articles_similar(self, topic1: str, summary1: str, topic2: str, summary2: str) -> bool:
+        """
+        Use AI to determine if two articles are highly similar
+        
+        Args:
+            topic1, summary1: First article's topic and summary
+            topic2, summary2: Second article's topic and summary
+            
+        Returns:
+            True if articles are highly similar (duplicates), False otherwise
+        """
+        if not self.ai_client:
+            return False
+        
+        prompt = f"""請判斷以下兩則香港地產新聞是否高度相似（內容基本相同，只是表述略有不同）。
+
+新聞1:
+標題: {topic1}
+摘要: {summary1}
+
+新聞2:
+標題: {topic2}
+摘要: {summary2}
+
+請判斷這兩則新聞是否講述相同的事件或內容。如果它們高度相似（例如：同一事件的不同報道、同一數據的不同表述），請回答"是"。如果它們是不同的新聞內容，請回答"否"。
+
+只回答"是"或"否"，不要添加其他說明。"""
+
+        try:
+            response = self.ai_client.chat.completions.create(
+                model=self.ai_model,
+                messages=[
+                    {"role": "system", "content": "你是一個新聞去重專家。請準確判斷兩則新聞是否高度相似。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=10
+            )
+            
+            result = response.choices[0].message.content.strip().lower()
+            return '是' in result or 'yes' in result or result == 'y'
+            
+        except Exception as e:
+            logger.debug(f"Error in AI deduplication: {e}")
+            return False
+    
+    def format_new_property(self, articles: List[Dict], filename: str) -> pd.DataFrame:
+        """Format new property sheet"""
+        data = []
+        
+        def to_numeric(value, default='N/A'):
+            """Convert value to numeric, return default if not valid"""
+            if value == 'N/A' or value is None:
+                return default
+            try:
+                num_str = str(value).replace(',', '').strip()
+                if num_str and num_str != 'N/A':
+                    return float(num_str)
+                return default
+            except (ValueError, AttributeError):
+                return default
+        
+        for idx, article in enumerate(articles, 1):
+            details = article.get('details', {})
+            title = article.get('title', '')
+            content = article.get('full_content', article.get('description', ''))
+            
+            # Convert numeric fields
+            price_min = to_numeric(details.get('price_min', details.get('price', 'N/A')), 'N/A')
+            price_max = to_numeric(details.get('price_max', details.get('price', 'N/A')), 'N/A')
+            area_min = to_numeric(details.get('area_min', details.get('area', 'N/A')), 'N/A')
+            area_max = to_numeric(details.get('area_max', details.get('area', 'N/A')), 'N/A')
+            unit_price_min = to_numeric(details.get('unit_price_min', details.get('unit_price', 'N/A')), 'N/A')
+            unit_price_max = to_numeric(details.get('unit_price_max', details.get('unit_price', 'N/A')), 'N/A')
+            unit_price_avg = to_numeric(details.get('unit_price_avg', details.get('unit_price', 'N/A')), 'N/A')
+            
+            row = {
+                'No.': idx,
+                'Date': details.get('date', article.get('date', 'N/A')),
+                'District': details.get('district', 'N/A'),
+                'Property': details.get('property', title[:50]),
+                'Asset type': details.get('asset_type', 'N/A'),
+                'Floor': details.get('floor', 'N/A'),
+                'Unit': details.get('unit', 'N/A'),
+                'Nature': details.get('nature', 'Sales'),
+                'Transaction Price_Min': price_min,
+                'Transaction Price_Max': price_max,
+                'Area basis': details.get('area_basis', 'NFA'),
+                'Unit basis': 'sqft',
+                'Area_Min': area_min,
+                'Area_Max': area_max,
+                'Unit Price_Min': unit_price_min,
+                'Unit Price_Max': unit_price_max,
+                'Unit Price_Avg': unit_price_avg,
+                'Seller/Landlord': details.get('seller', 'N/A'),
+                'Source': self.extract_source(article),
+                'URL': article.get('url', ''),
+                'Filename': filename,
+                'Content': content[:500] if content else 'N/A'  # First 500 chars
+            }
+            data.append(row)
+        
+        return pd.DataFrame(data)
+    
     def write_excel(self, transactions: List[Dict], news: List[Dict], 
                    centaline: List[Dict], midland: List[Dict], 
                    start_date: datetime, end_date: datetime) -> str:
@@ -337,26 +607,36 @@ class ExcelFormatter:
                 self.format_worksheet(writer.book['major_trans'], is_transaction=True)
                 print(f"  → major_trans: {len(df_trans)} rows")
             else:
-                df_trans = pd.DataFrame(columns=['No.', 'Date', 'District', 'Property', 'Asset type', 
+                df_trans = pd.DataFrame(columns=['No.', 'Date', 'District', 'Property', '', 'Asset type', 
                                                  'Floor', 'Unit', 'Nature', 'Transaction price', 'Area', 
-                                                 'Unit basis', 'Area/unit', 'Unit price', 'Yield', 
+                                                 'Area basis', 'Unit basis', 'Area/unit', 'Unit price', 'Yield', 
                                                  'Seller/Landlord', 'Buyer/Tenant', 'Source', 'URL', 
                                                  'Filename', 'Dedup Flag'])
                 df_trans.to_excel(writer, sheet_name='major_trans', index=False)
                 self.format_worksheet(writer.book['major_trans'], is_transaction=True)
                 print(f"  → major_trans: 0 rows (empty)")
             
-            # News sheet - deduplicate by topic
+            # News sheet - deduplicate by topic (normalize by removing spaces)
             if news:
-                seen_topics = set()
+                original_count = len(news)
+                seen_topics_normalized = set()
                 unique_news = []
                 for article in news:
                     topic = article.get('details', {}).get('topic', '')
-                    if topic and topic not in seen_topics:
-                        seen_topics.add(topic)
-                        unique_news.append(article)
+                    if topic:
+                        # Normalize topic by removing all spaces for comparison
+                        topic_normalized = topic.replace(' ', '').replace('\u3000', '')  # Remove regular spaces and full-width spaces
+                        if topic_normalized and topic_normalized not in seen_topics_normalized:
+                            seen_topics_normalized.add(topic_normalized)
+                            unique_news.append(article)
                 news = unique_news
-                print(f"  → Deduplicated news: {len(unique_news)} unique (removed {len(seen_topics) - len(unique_news)} duplicates)")
+                print(f"  → Deduplicated news (space-normalized): {len(unique_news)} unique (removed {original_count - len(unique_news)} duplicates)")
+                
+                # AI-based deduplication for highly similar articles
+                if len(news) > 1 and self.ai_client:
+                    print(f"  → AI deduplication: checking for highly similar articles...")
+                    news = self.ai_deduplicate_news(news)
+                    print(f"  → After AI deduplication: {len(news)} unique articles")
             
             df_news = self.format_news(news, tab_filename) if news else pd.DataFrame()
             if not df_news.empty:
@@ -390,7 +670,7 @@ class ExcelFormatter:
                 self._format_centaline_sheet(writer.book['Trans_Commercial'])
                 print(f"  → Trans_Commercial: 0 rows (empty)")
             
-            # New Property sheet (empty template)
+            # New Property sheet (empty template - not used)
             df_new_prop = pd.DataFrame(columns=['No.', 'Date', 'District', 'Property', 'Asset type', 
                                                'Floor', 'Unit', 'Nature', 'Transaction Price_Min', 
                                                'Transaction Price_Max', 'Area basis', 'Unit basis', 

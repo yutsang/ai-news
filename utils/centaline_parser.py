@@ -232,21 +232,25 @@ class CentalineParser:
                         # Extract numeric value
                         transaction['price_numeric'] = self._parse_price(price_str)
             
-            # Find area (實用)
+            # Find area (實用) - the area/unit price is on the line AFTER "實用"
             for i, line in enumerate(lines):
-                if '實用' in line and '@' in line:
-                    # Format: "2,016呎 @$9,673"
-                    area_match = re.search(r'([\d,]+)呎', line)
-                    price_match = re.search(r'@\$?([\d,]+)', line)
-                    
-                    if area_match:
-                        area = area_match.group(1).replace(',', '')
-                        transaction['area'] = area
-                        transaction['area_unit'] = area
-                    
-                    if price_match:
-                        unit_price = price_match.group(1).replace(',', '')
-                        transaction['unit_price'] = unit_price
+                if '實用' in line:
+                    # Check the next line for area and unit price
+                    if i + 1 < len(lines):
+                        area_line = lines[i + 1]
+                        # Format: "2,016呎 @$9,673" or "2,016呎 @$9,673 /呎"
+                        area_match = re.search(r'([\d,]+)呎', area_line)
+                        price_match = re.search(r'@\$?([\d,]+)', area_line)
+                        
+                        if area_match:
+                            area = area_match.group(1).replace(',', '')
+                            transaction['area'] = area
+                            transaction['area_unit'] = area
+                        
+                        if price_match:
+                            unit_price = price_match.group(1).replace(',', '')
+                            transaction['unit_price'] = unit_price
+                    break  # Found it, no need to continue
             
             # Find layout (間隔)
             for i, line in enumerate(lines):

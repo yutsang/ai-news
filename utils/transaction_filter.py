@@ -117,17 +117,33 @@ def should_process_article(article: Dict, min_price_m: float = 20.0, min_area_sq
     
     # Article should have either high price OR large area
     # (some articles mention only price, some only area)
-    return has_high_price or has_large_area
+    if has_high_price or has_large_area:
+        return True
+    
+    # If we can't extract price/area but it's a transaction, include it
+    # (some articles mention transactions without explicit numbers)
+    # This helps capture more data
+    if has_transaction:
+        # Include if it mentions significant amounts (億, 千萬, etc.) even if we can't parse exact number
+        significant_amount_keywords = ['億', '千萬', '百萬', '萬', 'million', 'M']
+        if any(keyword in text for keyword in significant_amount_keywords):
+            return True
+        # Include if it mentions area (呎, sqft, etc.) even if we can't parse exact number
+        area_keywords = ['呎', '尺', 'sqft', '平方']
+        if any(keyword in text for keyword in area_keywords):
+            return True
+    
+    return False
 
 
 def filter_transactions(articles: list, min_price_m: float = 20.0, min_area_sqft: float = 2000.0) -> tuple:
     """
-    Filter articles to only include high-value transactions
+    Filter articles to only include significant transactions
     
     Args:
         articles: List of article dictionaries
-        min_price_m: Minimum price in millions HKD
-        min_area_sqft: Minimum area in square feet
+        min_price_m: Minimum price in millions HKD (default: 10M)
+        min_area_sqft: Minimum area in square feet (default: 1000)
         
     Returns:
         Tuple of (filtered_articles, total_count, filtered_count)

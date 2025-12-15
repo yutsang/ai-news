@@ -170,11 +170,16 @@ def main():
     try:
         # Step 1: Scrape news articles (title + preview only, no full content yet)
         print("\n[STEP 1/6] Scraping article list from primary source")
+        print(f"  → Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         scraper = House852Scraper()
         
         html_pages = []
         page = 1
-        while page <= 20:  # Max 20 pages
+        found_before_start = False  # Track if we've seen dates before start_date
+        consecutive_pages_without_in_range = 0  # Track consecutive pages without in-range items
+        max_pages = 100  # Increased from 20 to 100 to get more historical data
+        
+        while page <= max_pages:
             html = scraper.fetch_page(page)
             if not html:
                 break
@@ -183,13 +188,44 @@ def main():
                 break
             
             # Filter by date range
+            page_has_in_range = False
+            page_earliest_date = None
+            
             for item in news_items:
                 if item['date']:
                     item_date = scraper.parse_date(item['date'])
-                    if item_date and start_date <= item_date <= end_date:
-                        html_pages.append(item)
-                    elif item_date and item_date < start_date:
-                        break
+                    if item_date:
+                        # Track earliest date on this page
+                        if page_earliest_date is None or item_date < page_earliest_date:
+                            page_earliest_date = item_date
+                        
+                        if start_date <= item_date <= end_date:
+                            html_pages.append(item)
+                            page_has_in_range = True
+                        elif item_date < start_date:
+                            found_before_start = True
+            
+            # If we found in-range items, reset the counter
+            if page_has_in_range:
+                consecutive_pages_without_in_range = 0
+            else:
+                consecutive_pages_without_in_range += 1
+            
+            # Show progress every 10 pages
+            if page % 10 == 0:
+                if page_earliest_date:
+                    print(f"  → Page {page}: earliest date = {page_earliest_date.strftime('%Y-%m-%d')}, found {len(html_pages)} articles so far")
+            
+            # Stop if:
+            # 1. We've seen dates before start_date AND
+            # 2. The earliest date on this page is clearly before start_date (at least 1 day before) AND
+            # 3. We've had 2 consecutive pages without in-range items
+            if (found_before_start and 
+                page_earliest_date and 
+                page_earliest_date < start_date - timedelta(days=1) and
+                consecutive_pages_without_in_range >= 2):
+                print(f"  → Stopping at page {page}: earliest date {page_earliest_date.strftime('%Y-%m-%d')} is before start date")
+                break
             
             page += 1
         
@@ -197,10 +233,24 @@ def main():
             print("No articles found in date range")
             sys.exit(0)
         
-        print(f"✓ Found {len(html_pages)} articles in date range")
+        # Show date range of found articles for debugging
+        dates_found = []
+        for item in html_pages:
+            if item.get('date'):
+                item_date = scraper.parse_date(item['date'])
+                if item_date:
+                    dates_found.append(item_date)
         
-        # Step 1.5: Filter high-value transactions and keep all news
-        print(f"\n  → Filtering for major transactions (>20M HKD or >=2000 sqft)...")
+        if dates_found:
+            min_date = min(dates_found).strftime('%Y-%m-%d')
+            max_date = max(dates_found).strftime('%Y-%m-%d')
+            print(f"✓ Found {len(html_pages)} articles in date range")
+            print(f"  → Actual dates found: {min_date} to {max_date} (expected: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')})")
+        else:
+            print(f"✓ Found {len(html_pages)} articles in date range")
+        
+        # Step 1.5: Filter major transactions and keep all news
+        print(f"\n  → Filtering for major transactions (>=20M HKD or >=2000 sqft)...")
         transaction_articles, total, filtered_count = filter_transactions(html_pages)
         
         # Also categorize to separate news from transactions early
@@ -228,6 +278,26 @@ def main():
         
         print(f"\n✓ Total to process: {len(articles)} articles ({len(transaction_articles)} transactions + {len(news_candidates)} news)")
         
+        # Deduplicate news candidates by topic BEFORE AI categorization (to save API calls)
+        if news_candidates:
+            print(f"\n  → Deduplicating news by topic before AI categorization...")
+            seen_topics = {}
+            unique_news_candidates = []
+            for article in news_candidates:
+                title = article.get('title', '').strip()
+                # Use title as topic key (normalized)
+                topic_key = title.lower().strip()
+                if topic_key and topic_key not in seen_topics:
+                    seen_topics[topic_key] = article
+                    unique_news_candidates.append(article)
+            
+            if len(unique_news_candidates) < len(news_candidates):
+                print(f"  → Deduplicated: {len(unique_news_candidates)} unique news (removed {len(news_candidates) - len(unique_news_candidates)} duplicates)")
+                # Replace news_candidates with deduplicated version
+                news_candidates = unique_news_candidates
+                # Rebuild articles list
+                articles = transaction_articles + news_candidates
+        
         # Quick mode: limit to first articles
         if args.quick:
             original_count = len(articles)
@@ -240,13 +310,15 @@ def main():
         
         # Separate articles by category
         transactions = [a for a in categorized_articles if a.get('category') == 'transactions']
-        # Exclude new_property from news - only include 'news' category
         news_articles = [a for a in categorized_articles if a.get('category') == 'news']
+        # Exclude new_property - don't process it
         excluded_articles = [a for a in categorized_articles if a.get('category') in ['exclude', 'new_property']]
         
         print(f"✓ Categorized: {len(transactions)} transactions + {len(news_articles)} news")
         if excluded_articles:
-            print(f"  → Excluded: {len(excluded_articles)} articles (non-valuation, quality issues, etc.)")
+            new_prop_count = len([a for a in categorized_articles if a.get('category') == 'new_property'])
+            exclude_count = len([a for a in categorized_articles if a.get('category') == 'exclude'])
+            print(f"  → Excluded: {exclude_count} articles (non-valuation, quality issues, etc.) + {new_prop_count} new_property (not processed)")
         
         print(f"\n[STEP 4/6] Fetching full article content")
         # Only fetch content for articles that will be included (exclude already filtered by AI)
@@ -262,6 +334,7 @@ def main():
         extractor = DetailExtractor()
         
         print(f"Extracting {len(transactions)} transaction details...")
+        all_extracted_transactions = []
         with ThreadPoolExecutor(max_workers=10) as executor:
             future_to_article = {executor.submit(extractor.extract_transaction_details, article): article 
                                for article in transactions}
@@ -272,8 +345,41 @@ def main():
                     article = future_to_article[future]
                     details = future.result()
                     article['details'] = details
+                    all_extracted_transactions.append(article)
                 except Exception as e:
                     logger.error(f"Error extracting transaction: {e}")
+        
+        # Filter major transactions AFTER extraction (using actual extracted values)
+        print(f"\n  → Filtering major transactions (price >= 20M HKD OR area >= 2000 sqft)...")
+        major_transactions = []
+        for article in all_extracted_transactions:
+            details = article.get('details', {})
+            price_str = str(details.get('price', 'N/A'))
+            area_str = str(details.get('area', 'N/A'))
+            
+            # Convert to numeric values
+            price_m = None
+            area_sqft = None
+            
+            try:
+                if price_str != 'N/A' and price_str:
+                    price_num = float(str(price_str).replace(',', '').strip())
+                    price_m = price_num / 1_000_000  # Convert to millions
+            except (ValueError, AttributeError):
+                pass
+            
+            try:
+                if area_str != 'N/A' and area_str:
+                    area_sqft = float(str(area_str).replace(',', '').strip())
+            except (ValueError, AttributeError):
+                pass
+            
+            # Check if meets criteria: price >= 20M OR area >= 2000 sqft
+            if (price_m is not None and price_m >= 20.0) or (area_sqft is not None and area_sqft >= 2000.0):
+                major_transactions.append(article)
+        
+        transactions = major_transactions
+        print(f"  → Major transactions: {len(transactions)} (filtered from {len(all_extracted_transactions)})")
         
         if news_articles:
             print(f"\nExtracting {len(news_articles)} news summaries (will filter out General)...")
