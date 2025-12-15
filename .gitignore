@@ -5,6 +5,11 @@ input/
 # Configuration (contains API keys)
 config.yml
 
+# Data files (contains scraped data)
+centaline_data.txt
+midland_data.txt
+*_data.txt
+
 # Python
 __pycache__/
 *.py[cod]
@@ -24,8 +29,11 @@ ENV/
 *.swo
 *~
 
-# Logs
+# Logs and intermediate files
 *.log
+*.html
+run_output.log
+quick_test.log
 
 # OS
 .DS_Store

@@ -25,7 +25,7 @@ from utils.transaction_filter import filter_transactions
 from utils.detail_extractor import DetailExtractor
 from utils.excel_formatter import ExcelFormatter
 from utils.centaline_parser import CentalineParser
-from utils.midland_scraper import MidlandICIScraper
+from utils.midland_parser import MidlandParser
 import os
 
 
@@ -61,14 +61,10 @@ def get_smart_date_range():
         return this_monday.replace(hour=0, minute=0, second=0, microsecond=0), \
                today.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-# Set up logging
+# Set up logging - minimal output
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('852house_scraper.log'),
-        logging.StreamHandler()
-    ]
+    level=logging.WARNING,  # Only show warnings and errors
+    format='%(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -260,8 +256,8 @@ def main():
         
         print(f"\n✓ Completed detail extraction")
         
-        # Step 5: Load Centaline transactions from manual data file
-        print("\n[STEP 5] Loading Centaline residential transactions...")
+        # Step 5: Load Company A transactions from manual data file
+        print("\n[STEP 5] Loading Company A residential transactions...")
         centaline_transactions = []
         if os.path.exists("centaline_data.txt"):
             try:
@@ -271,12 +267,12 @@ def main():
                 
                 if len(data_lines) > 5:
                     parser = CentalineParser()
-                    all_centaline = parser.parse_transactions("centaline_data.txt")
+                    all_company_a = parser.parse_transactions("centaline_data.txt")
                     
                     # Filter by date
-                    centaline_transactions = [t for t in all_centaline 
+                    centaline_transactions = [t for t in all_company_a 
                                             if t.get('date_obj') and start_date <= t['date_obj'] <= end_date]
-                    print(f"  ✓ Loaded {len(centaline_transactions)} Centaline transactions")
+                    print(f"  ✓ Loaded {len(centaline_transactions)} Company A transactions")
                 else:
                     print(f"  ℹ️  No data in centaline_data.txt")
             except Exception as e:
@@ -285,17 +281,31 @@ def main():
         else:
             print(f"  ℹ️  centaline_data.txt not found")
         
-        # Step 6: Scrape Midland ICI transactions
-        print("\n[STEP 6] Scraping Midland ICI commercial transactions...")
-        print("  → Filter: Area >= 3000 sqft")
+        # Step 6: Load Company B transactions from manual data file
+        print("\n[STEP 6] Loading Company B commercial transactions...")
         midland_transactions = []
-        try:
-            midland = MidlandICIScraper(headless=True)
-            midland_transactions = midland.scrape_transactions(start_date, end_date, min_area_sqft=3000.0)
-            print(f"  ✓ Found {len(midland_transactions)} Midland ICI transactions")
-        except Exception as e:
-            logger.error(f"Midland error: {e}")
-            print(f"  ⚠️  Midland scraping failed: {e}")
+        if os.path.exists("midland_data.txt"):
+            try:
+                with open("midland_data.txt", 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    data_lines = [l for l in content.split('\n') if l.strip() and not l.startswith('#')]
+                
+                if len(data_lines) > 5:
+                    parser = MidlandParser()
+                    all_company_b = parser.parse_transactions("midland_data.txt")
+                    
+                    # Filter by date and area (>=3000 sqft)
+                    midland_transactions = [t for t in all_company_b 
+                                          if t.get('date_obj') and start_date <= t['date_obj'] <= end_date
+                                          and float(t.get('area', 0)) >= 3000.0]
+                    print(f"  ✓ Loaded {len(midland_transactions)} Company B transactions")
+                else:
+                    print(f"  ℹ️  No data in midland_data.txt")
+            except Exception as e:
+                logger.error(f"Midland error: {e}")
+                print(f"  ⚠️  Midland error: {e}")
+        else:
+            print(f"  ℹ️  midland_data.txt not found")
         
         # Save to Excel with new format
         print("\n[FINAL STEP] Saving results to Excel...")
@@ -311,13 +321,14 @@ def main():
         print("=" * 80)
         
         print(f"\n📊 Summary:")
-        print(f"  852.house: {len(transactions)} transactions + {len(news_articles)} news")
-        print(f"  Centaline: {len(centaline_transactions)} residential")
-        print(f"  Midland ICI: {len(midland_transactions)} commercial")
+        print(f"  Primary source: {len(transactions)} transactions + {len(news_articles)} news")
+        print(f"  Trans_Commercial: {len(centaline_transactions)} + {len(midland_transactions)} = {len(centaline_transactions) + len(midland_transactions)}")
+        print(f"    - Company A (Residential): {len(centaline_transactions)}")
+        print(f"    - Company B (Commercial): {len(midland_transactions)}")
         print(f"  Total: {len(transactions) + len(centaline_transactions) + len(midland_transactions)} transactions")
         
         print(f"\n📁 Output: {output_file}")
-        print("\n📋 4 Sheets: Transactions | News | Centaline | Midland ICI")
+        print("\n📋 3 Sheets: Transactions | News | Trans_Commercial")
         print("\n" + "=" * 80)
         
         return 0

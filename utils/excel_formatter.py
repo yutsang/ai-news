@@ -40,7 +40,13 @@ class ExcelFormatter:
     def extract_source(self, article: Dict) -> str:
         """Extract source from article content"""
         # First check if source was extracted from article page
-        if 'source' in article and article['source'] != '852.house':
+        source = article.get('source', 'Company C')
+        
+        # Don't expose internal source names
+        if source and source not in ['Company A', 'Company B', 'Company C']:
+            return source  # Keep actual news source names
+        
+        if 'source' in article and article['source'] not in ['852.house', 'Company C']:
             return article['source']
         
         # Check tags as fallback
@@ -330,35 +336,31 @@ class ExcelFormatter:
                 self.format_worksheet(writer.book['News'], is_transaction=False)
                 print(f"  → News: 0 rows (empty)")
             
-            # Centaline sheet (always create)
-            df_centaline = self.format_centaline(centaline, filename) if centaline else pd.DataFrame()
-            if not df_centaline.empty:
-                df_centaline.to_excel(writer, sheet_name='Centaline', index=False)
-                self._format_centaline_sheet(writer.book['Centaline'])
-                print(f"  → Centaline: {len(df_centaline)} rows")
+            # Trans_Commercial sheet - combine Centaline + Midland
+            all_commercial = []
+            
+            # Add Centaline transactions
+            if centaline:
+                all_commercial.extend(centaline)
+            
+            # Add Midland transactions
+            if midland:
+                all_commercial.extend(midland)
+            
+            # Create combined sheet
+            if all_commercial:
+                df_commercial = self.format_centaline(all_commercial, filename)
+                df_commercial.to_excel(writer, sheet_name='Trans_Commercial', index=False)
+                self._format_centaline_sheet(writer.book['Trans_Commercial'])
+                print(f"  → Trans_Commercial: {len(df_commercial)} rows ({len(centaline)} Centaline + {len(midland)} Midland)")
             else:
-                df_centaline = pd.DataFrame(columns=['No.', 'Date', 'District', 'Asset type', 'Property', 
+                df_commercial = pd.DataFrame(columns=['No.', 'Date', 'District', 'Asset type', 'Property', 
                                                      'Floor', 'Unit', 'Area basis', 'Unit basis', 'Area/Unit', 
                                                      'Transaction Price', 'Unit Price', 'Nature', 'Category', 
                                                      'Source', 'Filename'])
-                df_centaline.to_excel(writer, sheet_name='Centaline', index=False)
-                self._format_centaline_sheet(writer.book['Centaline'])
-                print(f"  → Centaline: 0 rows (empty)")
-            
-            # Midland ICI sheet (always create)
-            df_midland = self.format_centaline(midland, filename) if midland else pd.DataFrame()
-            if not df_midland.empty:
-                df_midland.to_excel(writer, sheet_name='Midland ICI', index=False)
-                self._format_centaline_sheet(writer.book['Midland ICI'])
-                print(f"  → Midland ICI: {len(df_midland)} rows")
-            else:
-                df_midland = pd.DataFrame(columns=['No.', 'Date', 'District', 'Asset type', 'Property', 
-                                                   'Floor', 'Unit', 'Area basis', 'Unit basis', 'Area/Unit', 
-                                                   'Transaction Price', 'Unit Price', 'Nature', 'Category', 
-                                                   'Source', 'Filename'])
-                df_midland.to_excel(writer, sheet_name='Midland ICI', index=False)
-                self._format_centaline_sheet(writer.book['Midland ICI'])
-                print(f"  → Midland ICI: 0 rows (empty)")
+                df_commercial.to_excel(writer, sheet_name='Trans_Commercial', index=False)
+                self._format_centaline_sheet(writer.book['Trans_Commercial'])
+                print(f"  → Trans_Commercial: 0 rows (empty)")
         
         print(f"\n✅ Excel file created: {filepath}")
         return filepath
