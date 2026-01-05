@@ -26,6 +26,8 @@ from utils.detail_extractor import DetailExtractor
 from utils.excel_formatter import ExcelFormatter
 from utils.centaline_parser import CentalineParser
 from utils.midland_parser import MidlandParser
+from utils.centaline_web_scraper import CentalineWebScraper
+from utils.midland_api_scraper import MidlandAPIScraper
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 import os
@@ -155,6 +157,68 @@ def main():
         sys.exit(1)
     
     print(f"\nDate range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    
+    # Fetch data from automated scrapers
+    print("\n" + "=" * 80)
+    print("Fetching property transactions (automated)...")
+    print("=" * 80)
+    
+    centaline_transactions = []
+    midland_transactions = []
+    residential_valid = False
+    commercial_valid = False
+    
+    # Fetch residential data from Centaline (web scraping)
+    print("\n[FETCH] Residential data from Centaline website...")
+    try:
+        with CentalineWebScraper(headless=True) as scraper:
+            centaline_transactions = scraper.fetch_transactions(start_date, end_date, min_area=2000)
+            
+            if centaline_transactions:
+                residential_valid = True
+                print(f"✓ Found {len(centaline_transactions)} residential transactions (> 2000 sqft)")
+            else:
+                print(f"⚠️  No residential transactions found")
+    except Exception as e:
+        logger.error(f"Centaline scraping error: {e}")
+        print(f"⚠️  Error fetching Centaline data: {e}")
+    
+    # Fetch commercial data from Midland ICI (API)
+    print("\n[FETCH] Commercial data from Midland ICI API...")
+    try:
+        api_scraper = MidlandAPIScraper()
+        raw_midland = api_scraper.fetch_transactions(start_date, end_date, min_area=2500)
+        
+        # Parse transactions
+        midland_transactions = [api_scraper.parse_transaction(tx) for tx in raw_midland]
+        
+        if midland_transactions:
+            commercial_valid = True
+            print(f"✓ Found {len(midland_transactions)} commercial transactions (>= 2500 sqft)")
+        else:
+            print(f"⚠️  No commercial transactions found")
+    except Exception as e:
+        logger.error(f"Midland API error: {e}")
+        print(f"⚠️  Error fetching Midland data: {e}")
+    
+    # Check if we should proceed
+    if not residential_valid and not commercial_valid:
+        print("\n" + "=" * 80)
+        print("❌ ERROR: No property transactions found")
+        print("=" * 80)
+        print(f"\nNo transactions were found in the date range:")
+        print(f"  Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        print(f"\nThis could be due to:")
+        print(f"  • No transactions matching the criteria in this period")
+        print(f"  • Website/API structure changes (scrapers may need updates)")
+        print(f"  • Network connectivity issues")
+        sys.exit(1)
+    elif not residential_valid:
+        print(f"\n⚠️  WARNING: No residential data found. Continuing with commercial data only.")
+    elif not commercial_valid:
+        print(f"\n⚠️  WARNING: No commercial data found. Continuing with residential data only.")
+    else:
+        print(f"\n✓ Both data sources fetched successfully")
     
     # Confirm before proceeding (only in interactive mode)
     if args.interactive:
@@ -408,55 +472,20 @@ def main():
         
         print(f"✓ Detail extraction complete")
         
-        print(f"\n[STEP 6/6] Loading additional data sources")
-        print("Loading Company A residential transactions...")
-        centaline_transactions = []
-        if os.path.exists("centaline_data.txt"):
-            try:
-                with open("centaline_data.txt", 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    data_lines = [l for l in content.split('\n') if l.strip() and not l.startswith('#')]
-                
-                if len(data_lines) > 5:
-                    parser = CentalineParser()
-                    all_company_a = parser.parse_transactions("centaline_data.txt")
-                    
-                    # Filter by date
-                    centaline_transactions = [t for t in all_company_a 
-                                            if t.get('date_obj') and start_date <= t['date_obj'] <= end_date]
-                    print(f"✓ Company A: {len(centaline_transactions)} transactions")
-                else:
-                    print(f"ℹ️  centaline_data.txt is empty")
-            except Exception as e:
-                logger.error(f"Company A error: {e}")
-                print(f"⚠️  Company A error: {e}")
-        else:
-            print(f"ℹ️  centaline_data.txt not found")
+        print(f"\n[STEP 6/6] Preparing additional data sources")
         
-        print("Loading Company B commercial transactions...")
-        midland_transactions = []
-        if os.path.exists("midland_data.txt"):
-            try:
-                with open("midland_data.txt", 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    data_lines = [l for l in content.split('\n') if l.strip() and not l.startswith('#')]
-                
-                if len(data_lines) > 5:
-                    parser = MidlandParser()
-                    all_company_b = parser.parse_transactions("midland_data.txt")
-                    
-                    # Filter by date and area (>=3000 sqft)
-                    midland_transactions = [t for t in all_company_b 
-                                          if t.get('date_obj') and start_date <= t['date_obj'] <= end_date
-                                          and float(t.get('area', 0)) >= 3000.0]
-                    print(f"✓ Company B: {len(midland_transactions)} transactions")
-                else:
-                    print(f"ℹ️  midland_data.txt is empty")
-            except Exception as e:
-                logger.error(f"Company B error: {e}")
-                print(f"⚠️  Company B error: {e}")
+        # Data was already fetched via automated scrapers
+        # centaline_transactions and midland_transactions are already available from earlier steps
+        
+        if residential_valid:
+            print(f"✓ Company A (Centaline): {len(centaline_transactions)} residential transactions")
         else:
-            print(f"ℹ️  midland_data.txt not found")
+            print("ℹ️  No Company A residential data available")
+        
+        if commercial_valid:
+            print(f"✓ Company B (Midland ICI): {len(midland_transactions)} commercial transactions")
+        else:
+            print("ℹ️  No Company B commercial data available")
         
         print(f"\n[FINAL] Generating Excel report")
         formatter = ExcelFormatter()

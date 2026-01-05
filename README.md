@@ -1,124 +1,142 @@
-# Hong Kong Property Transaction Scraper
+# Hong Kong Property News Scraper
 
-Automated property transaction scraper with AI-powered analysis and multi-source data collection.
+Automated scraper for Hong Kong property news, transactions, and market data. Generates professional Excel reports with AI-categorized content.
 
-## Quick Start
+## 🚀 Quick Start
 
-### 1. Install Dependencies
 ```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Configure API keys in config.yml
+# - DeepSeek AI API key (for categorization)
+
+# Run the scraper
+python main.py
 ```
 
-### 2. Configure API Key
+## 📊 What It Does
 
-Create `config.yml` from the example below and add your DeepSeek API key:
+Automatically collects and processes:
+
+1. **Property Transactions** (3 sources)
+   - Centaline: Residential transactions (> 2000 sqft)
+   - Midland ICI: Commercial transactions (> 2500 sqft)  
+   - 852.house: Major transactions (>= $20M or >= 2000 sqft)
+
+2. **Real Estate News** (852.house)
+   - AI-categorized and filtered
+   - Top 15-20 market-relevant articles
+   - Duplicates removed
+
+## 📋 Output
+
+Generates Excel file: `output/property_report_YYMMDD_HHMMSS.xlsx`
+
+### 4 Sheets:
+
+| Sheet | Content | Typical Count |
+|-------|---------|---------------|
+| **major_trans** | High-value transactions from 852.house | 20-30 |
+| **news** | Top market-relevant news articles | 15-20 |
+| **Trans_Commercial** | All property transactions (Centaline + Midland) | 50-70 |
+| **new_property** | New property launches | 0-10 |
+
+## 🎯 Expected Results (Per Week)
+
+- **Residential** (Centaline): 10-15 transactions
+- **Commercial** (Midland ICI): 40-50 transactions
+- **News** (852.house): 15-20 articles
+- **Major Transactions** (852.house): 20-30
+
+## 📅 Date Range Logic
+
+**Automatic (Smart Date Range)**:
+- **Weekday (Mon-Fri)**: Last full week (previous Monday to Sunday)
+- **Weekend (Sat-Sun)**: Current week (this Monday to today)
+
+**Manual Override**:
+```bash
+python main.py --start-date 2025-12-29 --end-date 2026-01-04
+```
+
+## 🔧 Configuration
+
+Edit `config.yml`:
 
 ```yaml
-# Configuration Example
-
-# DeepSeek AI API Configuration
 deepseek:
-  api_key: "sk-your-api-key-here"  # Get from https://platform.deepseek.com/
+  api_key: "YOUR_API_KEY_HERE"
   api_base: "https://api.deepseek.com"
   model: "deepseek-chat"
-  temperature: 0.3
-  max_tokens: 4000
-
-# Scraping Configuration
-scraping:
-  max_retries: 3
-  retry_delay: 2
-  timeout: 30
-
-# Asset Types
-asset_types:
-  - "寫字樓"    # Office
-  - "商鋪"      # Shop
-  - "住宅"      # Residential
-  - "洋房"      # House
-  - "工廈"      # Industrial
-  - "酒店"      # Hotel
-  - "停車位"    # Car park
-
-# Data Source Mapping
-data_sources:
-
-# Excel Output
-excel:
-  output_dir: "output"
 ```
 
-### 3. Prepare Data Files
+## 📦 Requirements
 
-**Company A Data**:
-- Paste residential transaction data
-- Filter: >= 20M HKD
+- Python 3.8+
+- Chrome/Chromium browser (for Centaline scraping)
+- Internet connection
+- DeepSeek AI API key
 
-**Company B Data**:
-- Paste commercial transaction data  
-- Filter: >= 3000 sqft
+## ⚠️ Notes
 
-### 4. Run
+### Midland ICI Authorization
+- Uses API with authorization token
+- Token valid until 2034
+- If expired, update in `utils/midland_api_scraper.py`
 
+### Filters Applied
+- **Centaline**: Area > 2000 sqft, Date range
+- **Midland**: Area >= 2500 sqft, Date range  
+- **News**: AI-filtered for market relevance (score >= 6/10)
+
+## 📖 Usage Examples
+
+### Default (Smart Date Range)
 ```bash
-# Full mode (3-4 minutes)
 python main.py
-
-# Quick mode (first 15 transactions)
-python main.py --quick
 ```
 
-## Output
-
-**File**: `output/property_report_YYMMDD.xlsx`
-
-**3 Sheets**:
-1. **Transactions** - Major deals (>20M or >=2000 sqft)
-2. **News** - Market news with AI summaries
-3. **Trans_Commercial** - Combined residential + commercial data
-
-## Date Logic
-
-- **Weekday (Mon-Fri)**: Last full week (previous Mon-Sun)
-- **Weekend (Sat-Sun)**: Current week (this Mon-today)
-
-## Features
-
-- ✅ Smart pre-filtering (93% API reduction)
-- ✅ Auto-deduplication with review flags
-- ✅ AI detail extraction (19 fields)
-- ✅ Multi-source data (3 sources)
-- ✅ 30x faster processing
-
-## File Structure
-
-```
-├── main.py                 # Entry point
-├── config.yml             # Configuration (excluded from git)
-├── centaline_data.txt     # Company A data (excluded from git)
-├── midland_data.txt       # Company B data (excluded from git)
-├── utils/                 # Helper scripts
-└── output/                # Generated reports (excluded from git)
+### Custom Date Range
+```bash
+python main.py --start-date 2025-12-01 --end-date 2025-12-31
 ```
 
-## Weekly Workflow
+### Expected Runtime
+- Data collection: 2-3 minutes
+- AI processing: 3-5 minutes
+- **Total**: 5-10 minutes
 
-1. Prepare Company A data → paste into `centaline_data.txt`
-2. Prepare Company B data → paste into `midland_data.txt`
-3. Run: `python main.py`
-4. Review: `output/property_report_YYMMDD.xlsx`
+## 📊 Sample Output
 
-## Excel Columns
+```
+✅ SCRAPING COMPLETED SUCCESSFULLY
 
-### Transactions Sheet (20 columns)
-No. | Date | District | Property | Asset type | Floor | Unit | Nature | Transaction price | Area | Unit basis | Area/unit | Unit price | Yield | Seller/Landlord | Buyer/Tenant | Source | URL | Filename | Dedup Flag
+📊 Summary:
+  Primary source: 21 transactions + 59 news
+  Trans_Commercial: 12 + 44 = 56
+    - Centaline (Residential): 12
+    - Midland ICI (Commercial): 44
+  Total: 77 transactions
 
-### News Sheet (8 columns)
-No. | Date | Source | Asset type | Topic | Summary | URL | Filename
+📁 Output: output/property_report_260105_131447.xlsx
+```
 
-### Trans_Commercial Sheet (16 columns)
-No. | Date | District | Asset type | Property | Floor | Unit | Area basis | Unit basis | Area/Unit | Transaction Price | Unit Price | Nature | Category | Source | Filename
+## 🆘 Troubleshooting
 
----
+**No Centaline results**:
+- Check Chrome is installed
+- Website filters may need adjustment
+- May be no large properties (>2000 sqft) in date range
 
-**Time**: 3-4 minutes | **API Reduction**: 93% | **Speed**: 30x faster
+**Midland 401 error**:
+- Authorization token expired
+- Update token in `utils/midland_api_scraper.py`
+
+**AI errors**:
+- Check DeepSeek API key in `config.yml`
+- Verify API quota/credits
+
+## 📝 License
+
+See LICENSE file for details.

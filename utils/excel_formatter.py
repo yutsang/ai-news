@@ -196,7 +196,6 @@ class ExcelFormatter:
                 'Unit': details.get('unit', 'N/A'),
                 'Nature': details.get('nature', 'N/A'),
                 'Transaction price': price,
-                'Area': area,
                 'Area basis': area_basis,
                 'Unit basis': 'sqft',
                 'Area/unit': area,
@@ -229,15 +228,31 @@ class ExcelFormatter:
             except (ValueError, AttributeError):
                 return default
         
-        for idx, trans in enumerate(transactions, 1):
+        # First pass: collect valid rows (property name must not be empty)
+        valid_rows = []
+        
+        for trans in transactions:
+            property_name = trans.get('property', '').strip()
+            
+            # Skip if property name is empty or N/A
+            if not property_name or property_name == 'N/A':
+                continue
+            
             # Determine source and category
             source = trans.get('source', 'Company A')
-            if 'Company B' in source:
-                category = 'Commercial'
+            category = trans.get('category', 'Residential')
+            
+            # Identify source clearly
+            if 'Midland' in source or 'Company B' in source or source == 'Midland':
                 source_name = 'Midland'
-            else:
-                category = 'Residential'
+                if not category or category == 'Residential':
+                    category = 'Commercial'
+            elif 'Centaline' in source or 'Company A' in source or '中原' in source:
                 source_name = 'Centaline'
+                if not category or category == 'Commercial':
+                    category = 'Residential'
+            else:
+                source_name = source
             
             # Convert to numeric values
             area = to_numeric(trans.get('area', trans.get('area_unit', 'N/A')), 'N/A')
@@ -248,17 +263,26 @@ class ExcelFormatter:
             asset_type = trans.get('asset_type', '住宅')
             if asset_type in ['住宅', '洋房']:
                 area_basis = 'NFA'
-            elif asset_type in ['寫字樓', '商鋪', '商舖', '工廈', '酒店', '停車位']:
+            elif asset_type in ['寫字樓', '商鋪', '商舖', '工廈', '工商', '酒店', '停車位']:
                 area_basis = 'GFA'
             else:
-                area_basis = 'NFA'  # Default to NFA for residential
+                area_basis = 'NFA'
             
-            row = {
-                'No.': idx,
+            # Normalize nature to English
+            nature = trans.get('nature', 'Sales')
+            if nature in ['租', 'L', 'Lease', 'LEASE']:
+                nature = 'Lease'
+            elif nature in ['售', 'S', 'Sales', 'SALES', 'Sale']:
+                nature = 'Sales'
+            else:
+                nature = 'Sales'  # Default
+            
+            # Store transaction data (without No. yet)
+            valid_rows.append({
                 'Date': trans.get('date', 'N/A'),
                 'District': trans.get('district', 'N/A'),
                 'Asset type': asset_type,
-                'Property': trans.get('property', 'N/A'),
+                'Property': property_name,
                 'Floor': trans.get('floor', 'N/A'),
                 'Unit': trans.get('unit', 'N/A'),
                 'Area basis': area_basis,
@@ -266,10 +290,31 @@ class ExcelFormatter:
                 'Area/Unit': area,
                 'Transaction Price': price,
                 'Unit Price': unit_price,
-                'Nature': trans.get('nature', 'Sales'),
+                'Nature': nature,
                 'Category': category,
                 'Source': source_name,
                 'Filename': filename
+            })
+        
+        # Second pass: add row numbers and build final data with correct column order
+        for idx, trans_data in enumerate(valid_rows, 1):
+            row = {
+                'No.': idx,
+                'Date': trans_data['Date'],
+                'District': trans_data['District'],
+                'Asset type': trans_data['Asset type'],
+                'Property': trans_data['Property'],
+                'Floor': trans_data['Floor'],
+                'Unit': trans_data['Unit'],
+                'Area basis': trans_data['Area basis'],
+                'Unit basis': trans_data['Unit basis'],
+                'Area/Unit': trans_data['Area/Unit'],
+                'Transaction Price': trans_data['Transaction Price'],
+                'Unit Price': trans_data['Unit Price'],
+                'Nature': trans_data['Nature'],
+                'Category': trans_data['Category'],
+                'Source': trans_data['Source'],
+                'Filename': trans_data['Filename']
             }
             data.append(row)
         
@@ -321,18 +366,17 @@ class ExcelFormatter:
                 'H': 8,   # Unit
                 'I': 8,   # Nature
                 'J': 15,  # Transaction price
-                'K': 10,  # Area
-                'L': 10,  # Area basis
-                'M': 10,  # Unit basis
-                'N': 10,  # Area/unit
-                'O': 12,  # Unit price
-                'P': 10,  # Yield
-                'Q': 20,  # Seller/Landlord
-                'R': 20,  # Buyer/Tenant
-                'S': 12,  # Source
-                'T': 15,  # URL
-                'U': 10,  # Filename
-                'V': 25   # Dedup Flag
+                'K': 10,  # Area basis
+                'L': 10,  # Unit basis
+                'M': 10,  # Area/unit
+                'N': 12,  # Unit price
+                'O': 10,  # Yield
+                'P': 20,  # Seller/Landlord
+                'Q': 20,  # Buyer/Tenant
+                'R': 12,  # Source
+                'S': 15,  # URL
+                'T': 10,  # Filename
+                'U': 25   # Dedup Flag
             }
         else:
             # News columns
@@ -477,6 +521,99 @@ class ExcelFormatter:
         
         return unique_articles
     
+    def rank_and_filter_news(self, articles: List[Dict], target_count: int = 20) -> List[Dict]:
+        """
+        Rank news articles by market relevance and keep only top articles
+        
+        Args:
+            articles: List of news articles
+            target_count: Target number of articles to keep (default 20)
+            
+        Returns:
+            List of top-ranked articles
+        """
+        if not self.ai_client or len(articles) <= target_count:
+            return articles
+        
+        print(f"    → Scoring {len(articles)} articles for market relevance...")
+        
+        # Score each article
+        scored_articles = []
+        for article in articles:
+            topic = article.get('details', {}).get('topic', '')
+            summary = article.get('details', {}).get('summary', '')
+            
+            if not topic:
+                continue
+            
+            # Get relevance score from AI
+            score = self._score_market_relevance(topic, summary)
+            scored_articles.append((score, article))
+        
+        # Sort by score (highest first) and take top articles
+        scored_articles.sort(key=lambda x: x[0], reverse=True)
+        
+        # Keep top target_count articles (or minimum 15)
+        keep_count = max(min(target_count, len(scored_articles)), 15)
+        top_articles = [article for score, article in scored_articles[:keep_count] if score >= 6]
+        
+        # If we filtered too aggressively and have less than 15, keep more
+        if len(top_articles) < 15 and len(scored_articles) >= 15:
+            top_articles = [article for score, article in scored_articles[:15]]
+        
+        return top_articles
+    
+    def _score_market_relevance(self, topic: str, summary: str) -> int:
+        """
+        Score article's relevance to HK market valuation (0-10)
+        
+        Args:
+            topic: Article topic/title
+            summary: Article summary
+            
+        Returns:
+            Score from 0-10 (10 = most relevant to market valuation)
+        """
+        prompt = f"""請評分以下香港地產新聞對整體市場估值的重要性和相關性。
+
+評分標準 (0-10分):
+10分: 重大政策變動、利率調整、整體市場數據/趨勢，對市場估值有直接重大影響
+8-9分: 重要市場數據、土地供應、大型發展商動向，有明確市場影響
+6-7分: 一般市場新聞、區域數據、次要政策，有一定參考價值
+4-5分: 個別項目新聞、地區性消息，市場影響有限
+2-3分: 評論文章、個別案例、零散資訊，參考價值低
+0-1分: 與市場估值無關、質素問題、個人故事、社區瑣事
+
+標題: {topic}
+摘要: {summary}
+
+請只回答一個數字(0-10)，不要其他說明。"""
+
+        try:
+            response = self.ai_client.chat.completions.create(
+                model=self.ai_model,
+                messages=[
+                    {"role": "system", "content": "你是香港地產市場分析專家，專門評估新聞對市場估值的重要性。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=10
+            )
+            
+            score_text = response.choices[0].message.content.strip()
+            # Extract number from response
+            import re
+            score_match = re.search(r'\d+', score_text)
+            if score_match:
+                score = int(score_match.group())
+                return min(10, max(0, score))  # Clamp to 0-10
+            else:
+                return 5  # Default moderate score
+                
+        except Exception as e:
+            logger.error(f"Error scoring article: {e}")
+            return 5  # Default moderate score
+    
     def _are_articles_similar(self, topic1: str, summary1: str, topic2: str, summary2: str) -> bool:
         """
         Use AI to determine if two articles are highly similar
@@ -608,7 +745,7 @@ class ExcelFormatter:
                 print(f"  → major_trans: {len(df_trans)} rows")
             else:
                 df_trans = pd.DataFrame(columns=['No.', 'Date', 'District', 'Property', '', 'Asset type', 
-                                                 'Floor', 'Unit', 'Nature', 'Transaction price', 'Area', 
+                                                 'Floor', 'Unit', 'Nature', 'Transaction price', 
                                                  'Area basis', 'Unit basis', 'Area/unit', 'Unit price', 'Yield', 
                                                  'Seller/Landlord', 'Buyer/Tenant', 'Source', 'URL', 
                                                  'Filename', 'Dedup Flag'])
@@ -637,6 +774,12 @@ class ExcelFormatter:
                     print(f"  → AI deduplication: checking for highly similar articles...")
                     news = self.ai_deduplicate_news(news)
                     print(f"  → After AI deduplication: {len(news)} unique articles")
+                
+                # Filter to top 15-20 most market-relevant articles
+                if len(news) > 20:
+                    print(f"  → Ranking news by market relevance (target: 15-20 articles)...")
+                    news = self.rank_and_filter_news(news, target_count=20)
+                    print(f"  → Kept top {len(news)} most market-relevant articles")
             
             df_news = self.format_news(news, tab_filename) if news else pd.DataFrame()
             if not df_news.empty:
