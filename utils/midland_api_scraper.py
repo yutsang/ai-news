@@ -99,12 +99,14 @@ class MidlandAPIScraper:
     def parse_transaction(self, tx: Dict) -> Dict:
         """Parse a transaction from API response"""
         
-        # Parse date
+        # Parse date - convert to dd/mm/yyyy format
         date_str = tx.get('txDate', '')
         try:
             date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            formatted_date = date_obj.strftime('%d/%m/%Y')
         except:
             date_obj = None
+            formatted_date = date_str
         
         # Property name
         property_name = tx.get('name', '')
@@ -166,7 +168,7 @@ class MidlandAPIScraper:
             source_info = 'N/A'
         
         return {
-            'date': date_str,
+            'date': formatted_date,
             'date_obj': date_obj,
             'district': district,
             'property': property_name,

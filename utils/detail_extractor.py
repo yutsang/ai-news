@@ -23,12 +23,18 @@ class DetailExtractor:
             self.config = yaml.safe_load(f)
         
         deepseek_config = self.config['deepseek']
+        
+        # Initialize OpenAI client with base_url (works for both cloud and local AI)
+        # For local AI: set api_base to "http://localhost:1234/v1" or your local endpoint
+        # For cloud: use "https://api.deepseek.com"
         self.client = OpenAI(
-            api_key=deepseek_config['api_key'],
-            base_url=deepseek_config['api_base']
+            api_key=deepseek_config.get('api_key', 'local-key'),
+            base_url=deepseek_config.get('api_base', 'https://api.deepseek.com')
         )
-        self.model = deepseek_config['model']
-        self.temperature = deepseek_config['temperature']
+        
+        # Support both 'model' and 'chat_model' config keys for compatibility
+        self.model = deepseek_config.get('chat_model', deepseek_config.get('model', 'deepseek-chat'))
+        self.temperature = deepseek_config.get('temperature', 0.3)
     
     def extract_transaction_details(self, article: Dict) -> Dict:
         """Extract detailed transaction information"""

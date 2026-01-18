@@ -118,14 +118,21 @@ class MidlandParser:
                 trans['area'] = area_match.group(1).replace(',', '')
                 trans['area_unit'] = trans['area']
             
-            # Line 3: Date
+            # Line 3: Date - parse YYYY/MM/DD and convert to DD/MM/YYYY
             date_str = block[3]
             try:
+                # Try YYYY/MM/DD format first
                 date_obj = datetime.strptime(date_str, '%Y/%m/%d')
                 trans['date'] = date_obj.strftime('%d/%m/%Y')
                 trans['date_obj'] = date_obj
             except:
-                trans['date'] = date_str
+                try:
+                    # Try DD/MM/YYYY format (already formatted)
+                    date_obj = datetime.strptime(date_str, '%d/%m/%Y')
+                    trans['date'] = date_str
+                    trans['date_obj'] = date_obj
+                except:
+                    trans['date'] = date_str
             
             # Line 4: Source (skip, we use "Midland ICI")
             

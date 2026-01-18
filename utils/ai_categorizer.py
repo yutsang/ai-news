@@ -21,7 +21,7 @@ class DeepSeekCategorizer:
     
     def __init__(self, config_path: str = "config.yml"):
         """
-        Initialize the categorizer with DeepSeek API
+        Initialize the categorizer with AI API (DeepSeek cloud or local AI)
         
         Args:
             config_path: Path to the YAML configuration file
@@ -31,15 +31,18 @@ class DeepSeekCategorizer:
         
         deepseek_config = self.config['deepseek']
         
-        # Initialize OpenAI client with DeepSeek API
+        # Initialize OpenAI client with base_url (works for both cloud and local AI)
+        # For local AI: set api_base to "http://localhost:1234/v1" or your local endpoint
+        # For cloud: use "https://api.deepseek.com"
         self.client = OpenAI(
-            api_key=deepseek_config['api_key'],
-            base_url=deepseek_config['api_base']
+            api_key=deepseek_config.get('api_key', 'local-key'),
+            base_url=deepseek_config.get('api_base', 'https://api.deepseek.com')
         )
         
-        self.model = deepseek_config['model']
-        self.temperature = deepseek_config['temperature']
-        self.max_tokens = deepseek_config['max_tokens']
+        # Support both 'model' and 'chat_model' config keys for compatibility
+        self.model = deepseek_config.get('chat_model', deepseek_config.get('model', 'deepseek-chat'))
+        self.temperature = deepseek_config.get('temperature', 0.3)
+        self.max_tokens = deepseek_config.get('max_tokens', 4000)
         
         self.categories = self.config['categories']
     

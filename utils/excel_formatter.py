@@ -27,14 +27,15 @@ class ExcelFormatter:
         self.output_dir = self.config['excel']['output_dir']
         os.makedirs(self.output_dir, exist_ok=True)
         
-        # Initialize AI client for deduplication
+        # Initialize AI client for deduplication (works for both cloud and local AI)
         deepseek_config = self.config.get('deepseek', {})
-        if deepseek_config.get('api_key'):
+        if deepseek_config.get('api_key') or deepseek_config.get('api_base'):
             self.ai_client = OpenAI(
-                api_key=deepseek_config['api_key'],
+                api_key=deepseek_config.get('api_key', 'local-key'),
                 base_url=deepseek_config.get('api_base', 'https://api.deepseek.com')
             )
-            self.ai_model = deepseek_config.get('model', 'deepseek-chat')
+            # Support both 'model' and 'chat_model' config keys for compatibility
+            self.ai_model = deepseek_config.get('chat_model', deepseek_config.get('model', 'deepseek-chat'))
         else:
             self.ai_client = None
     
@@ -448,6 +449,7 @@ class ExcelFormatter:
     def ai_deduplicate_news(self, articles: List[Dict]) -> List[Dict]:
         """
         Use AI to deduplicate highly similar news articles by comparing topic+summary pairs
+        More aggressive deduplication - compares ALL articles, not just within date groups
         
         Args:
             articles: List of news articles with details
@@ -458,63 +460,45 @@ class ExcelFormatter:
         if not self.ai_client or len(articles) <= 1:
             return articles
         
-        # Group articles by date and similar topic prefix to reduce comparisons
-        date_groups = {}
-        for article in articles:
-            date = article.get('details', {}).get('date', article.get('date', ''))
-            topic = article.get('details', {}).get('topic', '')
-            
-            if topic:
-                # Normalize topic for grouping
-                topic_normalized = topic.replace(' ', '').replace('\u3000', '').lower()
-                # Use date + first 15 chars of topic as group key
-                group_key = f"{date}_{topic_normalized[:15]}"
-            else:
-                group_key = f"{date}_no_topic"
-            
-            if group_key not in date_groups:
-                date_groups[group_key] = []
-            date_groups[group_key].append(article)
-        
-        # For each group, use AI to deduplicate
+        # Compare ALL articles for better deduplication
         unique_articles = []
         total_compared = 0
         total_removed = 0
         
-        for group_key, group_articles in date_groups.items():
-            if len(group_articles) == 1:
-                unique_articles.append(group_articles[0])
+        for article1 in articles:
+            topic1 = article1.get('details', {}).get('topic', '')
+            summary1 = article1.get('details', {}).get('summary', '')
+            
+            if not topic1:
+                unique_articles.append(article1)
                 continue
             
-            # Compare articles within the same group
-            group_unique = []
-            for article1 in group_articles:
-                topic1 = article1.get('details', {}).get('topic', '')
-                summary1 = article1.get('details', {}).get('summary', '')
+            is_duplicate = False
+            for article2 in unique_articles:
+                topic2 = article2.get('details', {}).get('topic', '')
+                summary2 = article2.get('details', {}).get('summary', '')
                 
-                if not topic1:
-                    group_unique.append(article1)
+                if not topic2:
                     continue
                 
-                is_duplicate = False
-                for article2 in group_unique:
-                    topic2 = article2.get('details', {}).get('topic', '')
-                    summary2 = article2.get('details', {}).get('summary', '')
-                    
-                    if not topic2:
-                        continue
-                    
-                    # Use AI to check similarity
-                    total_compared += 1
-                    if self._are_articles_similar(topic1, summary1, topic2, summary2):
-                        is_duplicate = True
-                        total_removed += 1
-                        break
+                # Quick pre-check: if topics are very different (< 30% overlap), skip AI
+                topic1_words = set(topic1.replace(' ', '').replace('\u3000', '').lower())
+                topic2_words = set(topic2.replace(' ', '').replace('\u3000', '').lower())
+                if topic1_words and topic2_words:
+                    # Calculate character overlap
+                    overlap = len(topic1_words & topic2_words) / max(len(topic1_words), len(topic2_words))
+                    if overlap < 0.3:
+                        continue  # Skip AI call for very different topics
                 
-                if not is_duplicate:
-                    group_unique.append(article1)
+                # Use AI to check similarity for potentially similar articles
+                total_compared += 1
+                if self._are_articles_similar(topic1, summary1, topic2, summary2):
+                    is_duplicate = True
+                    total_removed += 1
+                    break
             
-            unique_articles.extend(group_unique)
+            if not is_duplicate:
+                unique_articles.append(article1)
         
         if total_compared > 0:
             print(f"    → AI compared {total_compared} pairs, removed {total_removed} duplicates")
@@ -769,16 +753,22 @@ class ExcelFormatter:
                 news = unique_news
                 print(f"  → Deduplicated news (space-normalized): {len(unique_news)} unique (removed {original_count - len(unique_news)} duplicates)")
                 
-                # AI-based deduplication for highly similar articles
+                # AI-based deduplication for highly similar articles BEFORE filtering
                 if len(news) > 1 and self.ai_client:
                     print(f"  → AI deduplication: checking for highly similar articles...")
+                    news_before_ai = len(news)
                     news = self.ai_deduplicate_news(news)
-                    print(f"  → After AI deduplication: {len(news)} unique articles")
+                    print(f"  → After AI deduplication: {len(news)} unique articles (removed {news_before_ai - len(news)} similar)")
                 
-                # Filter to top 15-20 most market-relevant articles
+                # Rank and filter to top 15-20 most market-relevant articles
                 if len(news) > 20:
-                    print(f"  → Ranking news by market relevance (target: 15-20 articles)...")
+                    print(f"  → Too many news ({len(news)}). Ranking by market relevance (target: 15-20)...")
                     news = self.rank_and_filter_news(news, target_count=20)
+                    print(f"  → Kept top {len(news)} most market-relevant articles")
+                elif len(news) > 15:
+                    # Even if between 15-20, still rank to ensure quality
+                    print(f"  → Ranking {len(news)} news by market relevance for quality...")
+                    news = self.rank_and_filter_news(news, target_count=min(20, len(news)))
                     print(f"  → Kept top {len(news)} most market-relevant articles")
             
             df_news = self.format_news(news, tab_filename) if news else pd.DataFrame()

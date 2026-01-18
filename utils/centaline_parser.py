@@ -279,12 +279,22 @@ class CentalineParser:
         Parse property details to extract name, floor, unit
         
         Examples:
-        - "葡萄園 1期 瑪歌大道 洋房19" → ("葡萄園 1期 瑪歌大道 洋房19", "N/A", "N/A")
+        - "葡萄園 1期 瑪歌大道 洋房19" → ("葡萄園 1期 瑪歌大道", "洋房", "19")
         - "愛都大廈 2座 30樓 C室" → ("愛都大廈 2座", "30樓", "C")
         - "加多利園" → ("加多利園", "N/A", "N/A")
         """
         floor = "N/A"
         unit = "N/A"
+        
+        # Check for 洋房 pattern (e.g., "洋房19", "洋房1A")
+        house_match = re.search(r'洋房(\d+[A-Z]?|\d+號屋?|[A-Z]\d+)', details)
+        if house_match:
+            floor = "洋房"
+            unit = house_match.group(1).replace('號屋', '')  # Remove 號屋 suffix
+            # Property name is everything before "洋房"
+            property_name = details[:house_match.start()].strip()
+            property_name = re.sub(r'\s+', ' ', property_name).strip()
+            return property_name, floor, unit
         
         # Extract floor (e.g., "30樓", "地下")
         floor_match = re.search(r'(\d+樓|地下|低層|中層|高層|頂層|全幢)', details)
