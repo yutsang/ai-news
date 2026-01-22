@@ -41,7 +41,7 @@ class CentalineWebScraper:
             chrome_options.add_argument('--headless')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--window-size=1024,768')
+        chrome_options.add_argument('--window-size=600,800')  # Narrower window to trigger mobile UI with district
         
         self.driver = webdriver.Chrome(options=chrome_options)
         
@@ -49,7 +49,7 @@ class CentalineWebScraper:
             url = "https://hk.centanet.com/findproperty/list/transaction"
             logger.info(f"Navigating to Centaline: {url}")
             self.driver.get(url)
-            time.sleep(8)  # Wait longer for page to fully load
+            time.sleep(10)  # Wait longer for mobile UI to fully load and render
             
             # Set filters on the website (using tested working approach)
             # 1. Click "30日" to get recent transactions
@@ -246,7 +246,7 @@ class CentalineWebScraper:
             'unit_price': ''
         }
         
-        # Date
+        # Date - convert from YYYY-MM-DD to DD/MM/YYYY
         date_span = cells[0].find('span')
         date_str = date_span.get_text(strip=True) if date_span else ''
         try:
@@ -256,7 +256,7 @@ class CentalineWebScraper:
             flexible_end = end_date + timedelta(days=1)
             if not (start_date <= date_obj <= flexible_end):
                 return None
-            trans['date'] = date_str
+            trans['date'] = date_obj.strftime('%d/%m/%Y')  # Convert to DD/MM/YYYY
             trans['date_obj'] = date_obj
         except:
             return None
@@ -304,9 +304,31 @@ class CentalineWebScraper:
         # Store as additional info, but main source remains 'Centaline'
         trans['source_info'] = source_info
         
-        # District - try to extract from property name
-        words = property_name.split()
-        trans['district'] = words[0] if words else ''
+        # District - try to extract from district tag in mobile UI
+        district = ''
+        # Look for district span with various possible selectors
+        district_selectors = [
+            'span.adress',
+            'span.tag-adress', 
+            'span[class*="district"]',
+            'span[class*="location"]',
+            'span[class*="adress"]'
+        ]
+        
+        # Try to find district in the property cell (cells[1])
+        for selector in district_selectors:
+            district_elem = cells[1].select_one(selector)
+            if district_elem:
+                district = district_elem.get_text(strip=True)
+                logger.info(f"Found district from selector '{selector}': {district}")
+                break
+        
+        # Fallback: extract from property name (first word)
+        if not district:
+            words = property_name.split()
+            district = words[0] if words else ''
+        
+        trans['district'] = district
         
         # Asset type
         if '洋房' in property_full:
@@ -319,16 +341,27 @@ class CentalineWebScraper:
         return trans
     
     def _parse_property_details(self, property_full: str) -> tuple:
-        """Parse property string into name, floor, unit"""
-        # Simple parsing - can be enhanced
-        parts = property_full.split()
-        
+        """
+        Parse property string into name, floor, unit
+        Handles 洋房 (house) cases properly
+        """
         property_name = property_full
         floor = ''
         unit = ''
         
-        # Look for floor keywords
-        floor_keywords = ['高層', '中層', '低層', '地下']
+        # Check for 洋房 pattern first (e.g., "海灣園 9座 9號 9號洋房", "新德園 57座 1號 57號洋房")
+        house_match = re.search(r'(\d+號?)\s*洋房', property_full)
+        if house_match:
+            floor = '洋房'
+            unit = house_match.group(1).replace('號', '')  # Extract number before 洋房
+            # Property name is everything before the 洋房 part
+            property_name = property_full[:house_match.start()].strip()
+            # Remove trailing unit numbers like "9號", "57號"
+            property_name = re.sub(r'\s+\d+號$', '', property_name)
+            return property_name, floor, unit
+        
+        # Look for standard floor keywords (for apartments)
+        floor_keywords = ['高層', '中層', '低層', '地下', '頂層']
         for keyword in floor_keywords:
             if keyword in property_full:
                 idx = property_full.find(keyword)
@@ -340,8 +373,22 @@ class CentalineWebScraper:
                 if rest_parts:
                     floor = rest_parts[0]
                     if len(rest_parts) > 1:
-                        unit = rest_parts[1]
+                        unit_part = rest_parts[1]
+                        # Extract just the letter/number from unit (remove 室)
+                        unit = unit_part.replace('室', '')
                 break
+        
+        # Look for explicit floor numbers (e.g., "20樓")
+        if not floor:
+            floor_match = re.search(r'(\d+樓)', property_full)
+            if floor_match:
+                floor = floor_match.group(1)
+                property_name = property_full[:floor_match.start()].strip()
+                
+                # Look for unit after floor
+                unit_match = re.search(r'(\d+樓)\s*([A-Z]\d*|[A-Z]室)', property_full)
+                if unit_match:
+                    unit = unit_match.group(2).replace('室', '')
         
         return property_name, floor, unit
     

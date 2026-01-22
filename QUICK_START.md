@@ -1,4 +1,49 @@
-# Quick Start Guide - PC Local AI Configuration
+# Quick Start Guide - Mac vs Windows Setup
+
+## Platform-Specific Setup
+
+- **🍎 Mac** → Use DeepSeek Cloud API (fast, requires API key)
+- **🪟 Windows** → Use Local AI (LM Studio/Ollama, no API key needed)
+
+---
+
+## 🍎 Mac Setup (DeepSeek Cloud)
+
+### Get API Key
+1. Visit https://platform.deepseek.com
+2. Sign up and generate API key
+
+### Update config.yml
+```yaml
+deepseek:
+  api_key: "sk-YOUR-KEY-HERE"  # Your DeepSeek API key
+  api_base: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  chat_model: "deepseek-chat"
+  temperature: 0.3
+  max_tokens: 4000
+```
+
+### Test & Run
+```bash
+python test_ai_connection.py  # Test first
+python main.py --quick         # Quick test
+python main.py                 # Full run
+```
+
+---
+
+## 🪟 Windows Setup (Local AI)
+
+### Install Local AI Server
+
+**Recommended: LM Studio**
+1. Download from https://lmstudio.ai/
+2. Install and launch
+3. Download a Chinese-capable model (Qwen2-7B-Instruct recommended)
+4. Start local server (default: http://localhost:1234/v1)
+
+### Update config.yml
 
 ## For PC Users with Local AI
 

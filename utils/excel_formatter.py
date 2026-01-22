@@ -214,7 +214,7 @@ class ExcelFormatter:
         return pd.DataFrame(data)
     
     def format_centaline(self, transactions: List[Dict], filename: str) -> pd.DataFrame:
-        """Format Centaline/Midland transactions sheet"""
+        """Format Centaline/Midland transactions sheet with deduplication"""
         data = []
         
         def to_numeric(value, default='N/A'):
@@ -229,10 +229,34 @@ class ExcelFormatter:
             except (ValueError, AttributeError):
                 return default
         
+        # Deduplicate transactions by property+date+floor+unit
+        seen_keys = set()
+        deduped_transactions = []
+        duplicates_removed = 0
+        
+        for trans in transactions:
+            # Create unique key from property + date + floor + unit
+            property_name = str(trans.get('property', '')).strip()
+            date = str(trans.get('date', '')).strip()
+            floor = str(trans.get('floor', '')).strip()
+            unit = str(trans.get('unit', '')).strip()
+            
+            # Normalize for comparison
+            key = f"{property_name}|{date}|{floor}|{unit}".lower().replace(' ', '')
+            
+            if key not in seen_keys:
+                seen_keys.add(key)
+                deduped_transactions.append(trans)
+            else:
+                duplicates_removed += 1
+        
+        if duplicates_removed > 0:
+            print(f"  → Removed {duplicates_removed} duplicate transactions from Trans_Commercial")
+        
         # First pass: collect valid rows (property name must not be empty)
         valid_rows = []
         
-        for trans in transactions:
+        for trans in deduped_transactions:
             property_name = trans.get('property', '').strip()
             
             # Skip if property name is empty or N/A
@@ -464,8 +488,9 @@ class ExcelFormatter:
         unique_articles = []
         total_compared = 0
         total_removed = 0
+        duplicates_found = []  # Track what was removed for logging
         
-        for article1 in articles:
+        for idx1, article1 in enumerate(articles):
             topic1 = article1.get('details', {}).get('topic', '')
             summary1 = article1.get('details', {}).get('summary', '')
             
@@ -474,27 +499,32 @@ class ExcelFormatter:
                 continue
             
             is_duplicate = False
-            for article2 in unique_articles:
+            duplicate_of = None
+            
+            for idx2, article2 in enumerate(unique_articles):
                 topic2 = article2.get('details', {}).get('topic', '')
                 summary2 = article2.get('details', {}).get('summary', '')
                 
                 if not topic2:
                     continue
                 
-                # Quick pre-check: if topics are very different (< 30% overlap), skip AI
-                topic1_words = set(topic1.replace(' ', '').replace('\u3000', '').lower())
-                topic2_words = set(topic2.replace(' ', '').replace('\u3000', '').lower())
-                if topic1_words and topic2_words:
+                # Quick pre-check: if topics are very different (< 25% overlap), skip AI
+                # Lowered threshold from 30% to 25% to catch more potential duplicates
+                topic1_chars = set(topic1.replace(' ', '').replace('\u3000', ''))
+                topic2_chars = set(topic2.replace(' ', '').replace('\u3000', ''))
+                if topic1_chars and topic2_chars:
                     # Calculate character overlap
-                    overlap = len(topic1_words & topic2_words) / max(len(topic1_words), len(topic2_words))
-                    if overlap < 0.3:
-                        continue  # Skip AI call for very different topics
+                    overlap = len(topic1_chars & topic2_chars) / max(len(topic1_chars), len(topic2_chars))
+                    if overlap < 0.25:  # More aggressive - check more pairs
+                        continue
                 
                 # Use AI to check similarity for potentially similar articles
                 total_compared += 1
                 if self._are_articles_similar(topic1, summary1, topic2, summary2):
                     is_duplicate = True
+                    duplicate_of = idx2
                     total_removed += 1
+                    duplicates_found.append(f"{topic1[:40]}... → 重複於 {topic2[:40]}...")
                     break
             
             if not is_duplicate:
@@ -502,6 +532,10 @@ class ExcelFormatter:
         
         if total_compared > 0:
             print(f"    → AI compared {total_compared} pairs, removed {total_removed} duplicates")
+            if duplicates_found and len(duplicates_found) <= 5:
+                # Show removed items (up to 5)
+                for dup in duplicates_found:
+                    print(f"      - {dup}")
         
         return unique_articles
     
@@ -601,6 +635,7 @@ class ExcelFormatter:
     def _are_articles_similar(self, topic1: str, summary1: str, topic2: str, summary2: str) -> bool:
         """
         Use AI to determine if two articles are highly similar
+        More aggressive matching - catches similar topics even if from different sources
         
         Args:
             topic1, summary1: First article's topic and summary
@@ -612,25 +647,34 @@ class ExcelFormatter:
         if not self.ai_client:
             return False
         
-        prompt = f"""請判斷以下兩則香港地產新聞是否高度相似（內容基本相同，只是表述略有不同）。
+        prompt = f"""請判斷以下兩則香港地產新聞是否講述相同或高度相似的事件/內容。
 
 新聞1:
 標題: {topic1}
-摘要: {summary1}
+摘要: {summary1[:200]}
 
 新聞2:
 標題: {topic2}
-摘要: {summary2}
+摘要: {summary2[:200]}
 
-請判斷這兩則新聞是否講述相同的事件或內容。如果它們高度相似（例如：同一事件的不同報道、同一數據的不同表述），請回答"是"。如果它們是不同的新聞內容，請回答"否"。
+**判斷標準**（請更寬鬆地判斷相似性）:
+- 如果兩則新聞講述「相同事件」（例如：同一家銀行的同一份報告），即使報道角度不同，也應視為相似
+- 如果兩則新聞講述「同一類型的內容」（例如：多家銀行預測樓價上升的幅度），且主要數據/結論相似，也應視為相似
+- 如果一則新聞是另一則的「擴展版本」（內容包含對方），應視為相似
+- **只有當兩則新聞是完全不同的事件/主題時，才視為不相似**
 
-只回答"是"或"否"，不要添加其他說明。"""
+例子:
+- "花旗預測樓價升8%" vs "大行預測樓價升8%" → 相似（如果都是講花旗的報告）
+- "花旗預測樓價升8%" vs "美銀預測樓價升10%" → 不相似（不同銀行的報告）
+- "12月成交量升10%" vs "全年成交量創新高" → 不相似（不同時期數據）
+
+請只回答"是"（相似）或"否"（不相似），不要其他說明。"""
 
         try:
             response = self.ai_client.chat.completions.create(
                 model=self.ai_model,
                 messages=[
-                    {"role": "system", "content": "你是一個新聞去重專家。請準確判斷兩則新聞是否高度相似。"},
+                    {"role": "system", "content": "你是專業的新聞去重專家。請準確判斷兩則新聞是否講述相同或高度相似的事件。要寬鬆判斷相似性，避免重複報道同一事件。"},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1,
@@ -638,7 +682,7 @@ class ExcelFormatter:
             )
             
             result = response.choices[0].message.content.strip().lower()
-            return '是' in result or 'yes' in result or result == 'y'
+            return '是' in result or 'yes' in result or result == 'y' or 'similar' in result
             
         except Exception as e:
             logger.debug(f"Error in AI deduplication: {e}")

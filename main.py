@@ -183,7 +183,7 @@ def main():
         logger.error(f"Centaline scraping error: {e}")
         print(f"⚠️  Error fetching Centaline data: {e}")
     
-    # Fetch commercial data from Midland ICI (API)
+    # Fetch commercial data from Midland ICI (API with auto token)
     print("\n[FETCH] Commercial data from Midland ICI API...")
     try:
         api_scraper = MidlandAPIScraper()

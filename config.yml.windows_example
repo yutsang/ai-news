@@ -1,0 +1,65 @@
+# Configuration for 852.House News Scraper
+# FOR WINDOWS - LOCAL AI (LM Studio / Ollama)
+
+# LOCAL AI Configuration
+# Before running, make sure your local AI server is started!
+deepseek:
+  api_key: "local-key"  # Can be any string for local AI
+  api_base: "http://localhost:1234/v1"  # LM Studio default
+  # For Ollama, use: "http://localhost:11434/v1"
+  model: "qwen2-7b-instruct"  # Change to your model name
+  chat_model: "qwen2-7b-instruct"  # Same as model
+  temperature: 0.3
+  max_tokens: 4000
+
+# Scraping Configuration
+scraping:
+  base_url: "https://852.house/zh/newses"
+  max_retries: 3
+  retry_delay: 2
+  timeout: 30
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# Category Configuration
+categories:
+  transactions: "交易/成交"
+  news: "地產新聞"
+  new_property: "新盤"
+
+# Asset Types
+asset_types:
+  - "寫字樓"
+  - "商鋪"
+  - "住宅"
+  - "洋房"
+  - "工廈"
+  - "酒店"
+  - "停車位"
+
+# Data Source Mapping (for privacy)
+data_sources:
+  company_a: "Centaline"
+  company_b: "Midland ICI"
+  company_c: "852.house"
+
+# News Sources
+sources:
+  - "星島頭條"
+  - "星島日報"
+  - "明報"
+  - "HKET"
+  - "東方日報"
+  - "文匯報"
+  - "經濟日報"
+  - "信報"
+  - "852.house"
+
+# Excel Output Configuration
+excel:
+  output_dir: "output"
+  filename_dir: "output"
+  filename_template: "852house_news_{start_date}_{end_date}.xlsx"
+  sheet_names:
+    transactions: "Transactions"
+    news: "Real Estate News"
+    new_property: "New Property"
