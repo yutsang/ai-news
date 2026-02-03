@@ -2,13 +2,21 @@
 output/
 input/
 
-# Configuration (contains API keys)
+# Configuration (contains API keys) - IMPORTANT!
 config.yml
+# Keep config.sample.yml as template
 
 # Data files (contains scraped data)
 centaline_data.txt
 midland_data.txt
 *_data.txt
+
+# Temporary investigation and verification files
+*_COMPLETE.md
+INVESTIGATION_*.md
+WHAT_YOU_WILL_SEE.md
+verify_*.py
+diagnose_*.py
 
 # Python
 __pycache__/

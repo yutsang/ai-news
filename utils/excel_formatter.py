@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
-from openai import OpenAI
+from .ai_helper import AIHelper
 
 logger = logging.getLogger(__name__)
 
@@ -27,17 +27,13 @@ class ExcelFormatter:
         self.output_dir = self.config['excel']['output_dir']
         os.makedirs(self.output_dir, exist_ok=True)
         
-        # Initialize AI client for deduplication (works for both cloud and local AI)
-        deepseek_config = self.config.get('deepseek', {})
-        if deepseek_config.get('api_key') or deepseek_config.get('api_base'):
-            self.ai_client = OpenAI(
-                api_key=deepseek_config.get('api_key', 'local-key'),
-                base_url=deepseek_config.get('api_base', 'https://api.deepseek.com')
-            )
-            # Support both 'model' and 'chat_model' config keys for compatibility
-            self.ai_model = deepseek_config.get('chat_model', deepseek_config.get('model', 'deepseek-chat'))
-        else:
-            self.ai_client = None
+        # Initialize AI helper (handles AI availability automatically)
+        self.ai_helper = AIHelper(config_path)
+        self.ai_enabled = self.ai_helper.ai_enabled
+        
+        # For backwards compatibility
+        self.ai_client = self.ai_helper.client
+        self.ai_model = self.ai_helper.model
     
     def get_next_monday_filename(self, end_date: datetime) -> str:
         """
@@ -345,6 +341,28 @@ class ExcelFormatter:
         
         return pd.DataFrame(data)
     
+    def format_new_properties(self, properties: List[Dict], filename: str) -> pd.DataFrame:
+        """Format new property sheet"""
+        data = []
+        
+        for idx, prop in enumerate(properties, 1):
+            row = {
+                'No.': idx,
+                'Date': prop.get('latest_price_list_date', 'N/A'),
+                'District': prop.get('district', 'N/A'),
+                'Property': prop.get('name', 'N/A'),
+                'Developer': prop.get('developer', 'N/A'),
+                'Status': prop.get('status', 'N/A'),
+                'Units': prop.get('units', 'N/A'),
+                'Price_Min': prop.get('price_min', 'N/A'),
+                'Price_Max': prop.get('price_max', 'N/A'),
+                'URL': prop.get('url', ''),
+                'Filename': filename
+            }
+            data.append(row)
+        
+        return pd.DataFrame(data)
+    
     def format_news(self, articles: List[Dict], filename: str) -> pd.DataFrame:
         """Format news sheet - renumber after all filtering"""
         data = []
@@ -481,7 +499,7 @@ class ExcelFormatter:
         Returns:
             List of deduplicated articles
         """
-        if not self.ai_client or len(articles) <= 1:
+        if not self.ai_enabled or len(articles) <= 1:
             return articles
         
         # Compare ALL articles for better deduplication
@@ -520,7 +538,7 @@ class ExcelFormatter:
                 
                 # Use AI to check similarity for potentially similar articles
                 total_compared += 1
-                if self._are_articles_similar(topic1, summary1, topic2, summary2):
+                if self.ai_helper.deduplicate_articles(topic1, summary1, topic2, summary2):
                     is_duplicate = True
                     duplicate_of = idx2
                     total_removed += 1
@@ -542,6 +560,7 @@ class ExcelFormatter:
     def rank_and_filter_news(self, articles: List[Dict], target_count: int = 20) -> List[Dict]:
         """
         Rank news articles by market relevance and keep only top articles
+        Excludes Greater Bay Area news and focuses on HK real estate and valuation
         
         Args:
             articles: List of news articles
@@ -550,7 +569,7 @@ class ExcelFormatter:
         Returns:
             List of top-ranked articles
         """
-        if not self.ai_client or len(articles) <= target_count:
+        if not self.ai_enabled or len(articles) <= target_count:
             return articles
         
         print(f"    → Scoring {len(articles)} articles for market relevance...")
@@ -564,8 +583,8 @@ class ExcelFormatter:
             if not topic:
                 continue
             
-            # Get relevance score from AI
-            score = self._score_market_relevance(topic, summary)
+            # Get relevance score from AI (excludes Greater Bay Area, focuses on HK)
+            score = self.ai_helper.score_market_relevance(topic, summary)
             scored_articles.append((score, article))
         
         # Sort by score (highest first) and take top articles
@@ -748,8 +767,12 @@ class ExcelFormatter:
     
     def write_excel(self, transactions: List[Dict], news: List[Dict], 
                    centaline: List[Dict], midland: List[Dict], 
-                   start_date: datetime, end_date: datetime) -> str:
-        """Write formatted Excel file"""
+                   start_date: datetime, end_date: datetime, new_properties: List[Dict] = None) -> dict:
+        """Write formatted Excel file
+        
+        Returns:
+            dict with 'filepath' and counts: {'filepath': str, 'centaline_count': int, 'midland_count': int, 'new_prop_count': int}
+        """
         # Get filename with timestamp for Excel file
         excel_filename = self.get_next_monday_filename(end_date)
         filepath = os.path.join(self.output_dir, f"property_report_{excel_filename}.xlsx")
@@ -837,6 +860,11 @@ class ExcelFormatter:
                 df_commercial = self.format_centaline(all_commercial, tab_filename)
                 df_commercial.to_excel(writer, sheet_name='Trans_Commercial', index=False)
                 self._format_centaline_sheet(writer.book['Trans_Commercial'])
+                
+                # Count by source
+                centaline_count = len(df_commercial[df_commercial['Source'] == 'Centaline'])
+                midland_count = len(df_commercial[df_commercial['Source'] == 'Midland'])
+                
                 print(f"  → Trans_Commercial: {len(df_commercial)} rows")
             else:
                 df_commercial = pd.DataFrame(columns=['No.', 'Date', 'District', 'Asset type', 'Property', 
@@ -845,19 +873,32 @@ class ExcelFormatter:
                                                      'Source', 'Filename'])
                 df_commercial.to_excel(writer, sheet_name='Trans_Commercial', index=False)
                 self._format_centaline_sheet(writer.book['Trans_Commercial'])
+                centaline_count = 0
+                midland_count = 0
                 print(f"  → Trans_Commercial: 0 rows (empty)")
             
-            # New Property sheet (empty template - not used)
-            df_new_prop = pd.DataFrame(columns=['No.', 'Date', 'District', 'Property', 'Asset type', 
-                                               'Floor', 'Unit', 'Nature', 'Transaction Price_Min', 
-                                               'Transaction Price_Max', 'Area basis', 'Unit basis', 
-                                               'Area_Min', 'Area_Max', 'Unit Price_Min', 'Unit Price_Max', 
-                                               'Unit Price_Avg', 'Seller/Landlord', 'Source', 'URL', 
-                                               'Filename', 'Content'])
-            df_new_prop.to_excel(writer, sheet_name='new_property', index=False)
-            self.format_worksheet(writer.book['new_property'], is_transaction=True)
-            print(f"  → new_property: 0 rows (template)")
+            # New Property sheet
+            if new_properties:
+                df_new_prop = self.format_new_properties(new_properties, tab_filename)
+                df_new_prop.to_excel(writer, sheet_name='new_property', index=False)
+                self.format_worksheet(writer.book['new_property'], is_transaction=False)
+                new_prop_count = len(df_new_prop)
+                print(f"  → new_property: {new_prop_count} rows")
+            else:
+                df_new_prop = pd.DataFrame(columns=['No.', 'Date', 'District', 'Property', 'Developer',
+                                                   'Status', 'Units', 'Price_Min', 'Price_Max',
+                                                   'URL', 'Filename'])
+                df_new_prop.to_excel(writer, sheet_name='new_property', index=False)
+                self.format_worksheet(writer.book['new_property'], is_transaction=False)
+                new_prop_count = 0
+                print(f"  → new_property: 0 rows (template)")
         
         print(f"\n✅ Excel file created: {filepath}")
-        return filepath
+        
+        return {
+            'filepath': filepath,
+            'centaline_count': centaline_count,
+            'midland_count': midland_count,
+            'new_prop_count': new_prop_count
+        }
 

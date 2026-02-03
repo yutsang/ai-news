@@ -472,7 +472,7 @@ def main():
         
         print(f"✓ Detail extraction complete")
         
-        print(f"\n[STEP 6/6] Preparing additional data sources")
+        print(f"\n[STEP 6/7] Preparing additional data sources")
         
         # Data was already fetched via automated scrapers
         # centaline_transactions and midland_transactions are already available from earlier steps
@@ -487,10 +487,31 @@ def main():
         else:
             print("ℹ️  No Company B commercial data available")
         
+        # Fetch new properties from 28hse.com
+        print(f"\n[STEP 7/7] Fetching new property data from 28hse.com...")
+        new_properties = []
+        try:
+            from utils.new_property_scraper import NewPropertyScraper
+            new_prop_scraper = NewPropertyScraper()
+            new_properties = new_prop_scraper.fetch_new_properties(start_date, end_date)
+            
+            if new_properties:
+                print(f"✓ Found {len(new_properties)} new property launches this week")
+            else:
+                print(f"ℹ️  No new property launches found in date range")
+        except Exception as e:
+            logger.error(f"New property scraping error: {e}")
+            print(f"⚠️  Could not fetch new property data: {e}")
+        
         print(f"\n[FINAL] Generating Excel report")
         formatter = ExcelFormatter()
-        output_file = formatter.write_excel(transactions, news_articles, centaline_transactions,
-                                           midland_transactions, start_date, end_date)
+        result = formatter.write_excel(transactions, news_articles, centaline_transactions,
+                                      midland_transactions, start_date, end_date, new_properties)
+        
+        output_file = result['filepath']
+        actual_centaline = result['centaline_count']
+        actual_midland = result['midland_count']
+        actual_new_prop = result['new_prop_count']
         
         print(f"\n✓ Successfully saved to: {output_file}")
         
@@ -501,13 +522,18 @@ def main():
         
         print(f"\n📊 Summary:")
         print(f"  Primary source: {len(transactions)} transactions + {len(news_articles)} news")
-        print(f"  Trans_Commercial: {len(centaline_transactions)} + {len(midland_transactions)} = {len(centaline_transactions) + len(midland_transactions)}")
-        print(f"    - Company A (Residential): {len(centaline_transactions)}")
-        print(f"    - Company B (Commercial): {len(midland_transactions)}")
-        print(f"  Total: {len(transactions) + len(centaline_transactions) + len(midland_transactions)} transactions")
+        print(f"  Trans_Commercial: {actual_centaline} + {actual_midland} = {actual_centaline + actual_midland}")
+        print(f"    - Company A (Residential): {actual_centaline}")
+        print(f"    - Company B (Commercial): {actual_midland}")
+        print(f"  New Properties: {actual_new_prop}")
+        print(f"  Total: {len(transactions) + actual_centaline + actual_midland} transactions")
         
         print(f"\n📁 Output: {output_file}")
-        print("\n📋 3 Sheets: Transactions | News | Trans_Commercial")
+        
+        if actual_new_prop > 0:
+            print(f"\n💡 NEW PROPERTY INFO THIS WEEK: {actual_new_prop} property launches")
+        
+        print("\n📋 4 Sheets: Transactions | News | Trans_Commercial | new_property")
         print("\n" + "=" * 80)
         
         return 0

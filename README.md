@@ -8,12 +8,15 @@ Automated scraper for Hong Kong property news, transactions, and market data. Ge
 # Install dependencies
 pip install -r requirements.txt
 
-# Configure API keys in config.yml
-# - DeepSeek AI API key (for categorization)
+# Configure API key
+cp config.sample.yml config.yml
+# Edit config.yml and add your DeepSeek API key (optional - AI features will be disabled if not provided)
 
 # Run the scraper
 python main.py
 ```
+
+**Note**: AI features are optional. If you don't provide an API key, the scraper will still work but without AI categorization and filtering.
 
 ## 📊 What It Does
 
@@ -62,14 +65,20 @@ python main.py --start-date 2025-12-29 --end-date 2026-01-04
 
 ## 🔧 Configuration
 
-Edit `config.yml`:
+1. Copy sample config: `cp config.sample.yml config.yml`
+2. Edit `config.yml`:
 
 ```yaml
 deepseek:
-  api_key: "YOUR_API_KEY_HERE"
+  api_key: "YOUR_API_KEY_HERE"  # Optional - leave empty to disable AI
   api_base: "https://api.deepseek.com"
   model: "deepseek-chat"
 ```
+
+**AI Features (Optional)**:
+- If `api_key` is provided: AI categorization, filtering, and deduplication enabled
+- If `api_key` is empty: Basic scraping only, no AI processing
+- This allows the scraper to run on different computers without requiring API keys
 
 ## 📦 Requirements
 
@@ -81,14 +90,16 @@ deepseek:
 ## ⚠️ Notes
 
 ### Midland ICI Authorization
-- Uses API with authorization token
-- Token valid until 2034
-- If expired, update in `utils/midland_api_scraper.py`
+- Automatically retrieves fresh authorization token using ChromeDriver
+- Creates new session every time to avoid tracking
+- No manual token configuration needed
 
 ### Filters Applied
 - **Centaline**: Area > 2000 sqft, Date range
-- **Midland**: Area >= 2500 sqft, Date range  
-- **News**: AI-filtered for market relevance (score >= 6/10)
+- **Midland**: Area >= 2500 sqft, Date range, Fresh session every time to avoid tracking
+- **News**: AI-filtered for HK market relevance (score >= 6/10)
+  - **Excludes**: Greater Bay Area, Mainland China, quality issues, property management
+  - **Focuses on**: Hong Kong real estate valuation, market trends, price analysis
 
 ## 📖 Usage Examples
 

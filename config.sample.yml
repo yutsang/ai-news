@@ -1,0 +1,65 @@
+# Configuration for 852.House News Scraper
+# Copy this file to config.yml and fill in your API key
+
+# AI API Configuration
+# For cloud DeepSeek: use api_base: "https://api.deepseek.com"
+# For local AI (PC): use api_base: "http://localhost:1234/v1" or your local endpoint
+# Leave api_key empty to disable AI features (AI features will be skipped)
+deepseek:
+  api_key: ""  # Fill in your API key here, or leave empty to disable AI
+  api_base: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  chat_model: "deepseek-chat"  # Alternative model name for compatibility
+  temperature: 0.3
+  max_tokens: 4000
+
+# Scraping Configuration
+scraping:
+  base_url: "https://852.house/zh/newses"
+  max_retries: 3
+  retry_delay: 2
+  timeout: 30
+  user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# Category Configuration
+categories:
+  transactions: "交易/成交"  # Transactions (sales or lease)
+  news: "地產新聞"  # Real estate news in HK
+  new_property: "新盤"  # New property
+
+# Asset Types
+asset_types:
+  - "寫字樓"    # Office
+  - "商鋪"      # Shop
+  - "住宅"      # Residential
+  - "洋房"      # House
+  - "工廈"      # Industrial
+  - "酒店"      # Hotel
+  - "停車位"    # Car park
+
+# Data Source Mapping (for privacy)
+data_sources:
+  company_a: "Centaline"
+  company_b: "Midland ICI"
+  company_c: "852.house"
+
+# News Sources
+sources:
+  - "星島頭條"
+  - "星島日報"
+  - "明報"
+  - "HKET"
+  - "東方日報"
+  - "文匯報"
+  - "經濟日報"
+  - "信報"
+  - "852.house"
+
+# Excel Output Configuration
+excel:
+  output_dir: "output"
+  filename_template: "852house_news_{start_date}_{end_date}.xlsx"
+  sheet_names:
+    transactions: "Transactions"
+    news: "Real Estate News"
+    new_property: "New Property"

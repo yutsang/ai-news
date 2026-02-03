@@ -15,6 +15,8 @@ import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import logging
+import yaml
+from .ai_helper import AIHelper
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +24,18 @@ logger = logging.getLogger(__name__)
 class CentalineWebScraper:
     """Scraper for Centaline residential property transactions"""
     
-    def __init__(self, headless: bool = True):
+    def __init__(self, headless: bool = True, config_path: str = "config.yml"):
         self.headless = headless
         self.driver = None
+        
+        # Initialize AI helper for district extraction
+        try:
+            self.ai_helper = AIHelper(config_path)
+            self.ai_enabled = self.ai_helper.ai_enabled
+        except Exception as e:
+            logger.warning(f"Could not initialize AI helper: {e}")
+            self.ai_helper = None
+            self.ai_enabled = False
         
     def __enter__(self):
         return self
@@ -41,7 +52,10 @@ class CentalineWebScraper:
             chrome_options.add_argument('--headless')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--window-size=600,800')  # Narrower window to trigger mobile UI with district
+        chrome_options.add_argument('--window-size=1920,1080')  # Desktop size for better compatibility
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         
         self.driver = webdriver.Chrome(options=chrome_options)
         
@@ -49,54 +63,94 @@ class CentalineWebScraper:
             url = "https://hk.centanet.com/findproperty/list/transaction"
             logger.info(f"Navigating to Centaline: {url}")
             self.driver.get(url)
-            time.sleep(10)  # Wait longer for mobile UI to fully load and render
             
-            # Set filters on the website (using tested working approach)
-            # 1. Click "30日" to get recent transactions
-            try:
-                date_btn = self.driver.find_element(By.XPATH, "//button[contains(@class, 'btn-fiter') and contains(@class, 'active')]")
-                date_btn.click()
-                time.sleep(1)
-                option_30 = self.driver.find_element(By.XPATH, "//li//span[text()='30日']")
-                option_30.click()
-                time.sleep(2)
-                logger.info("Selected 30-day filter")
-            except Exception as e:
-                logger.warning(f"Could not set date filter: {e}")
+            # Wait for page to load completely
+            logger.info("Waiting for page to load...")
+            time.sleep(8)
             
-            # 2. Set minimum area filter
+            # Set area filter using UI (server-side filtering is more efficient)
+            logger.info(f"Setting area filter to >= {min_area} sqft...")
+            
             try:
-                # Open "更多" popup
+                # 1. Click "更多" (More) button
                 more_btn = WebDriverWait(self.driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'btn-fiter') and contains(., '更多')]"))
                 )
                 more_btn.click()
-                time.sleep(2)
-                logger.info("Opened 更多 popup")
+                logger.info("✓ Clicked '更多' button")
                 
-                # Find area inputs using working selector
-                area_section = self.driver.find_element(By.ID, "moreNSize")
-                inputs = area_section.find_elements(By.CSS_SELECTOR, "input.el-input__inner")
+                # Wait for popup to appear and settle
+                time.sleep(4)
                 
-                if len(inputs) >= 2:
-                    # Set minimum area
-                    min_input = inputs[0]
-                    min_input.clear()
-                    min_input.send_keys(str(min_area))
-                    time.sleep(1)
-                    logger.info(f"Set minimum area to {min_area} sqft")
-                    
-                    # Click search to apply filters
-                    search_btns = self.driver.find_elements(By.XPATH, "//button[contains(@class, 'el-button--text') and contains(., '搜尋')]")
-                    for btn in search_btns:
-                        if btn.is_displayed():
+                # 2. Find the area input in #moreNSize section
+                # Wait for the moreNSize section to be present
+                area_section = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "moreNSize"))
+                )
+                logger.info("✓ Found #moreNSize section")
+                
+                # Find the first input in moreNSize section (this is the minimum area input)
+                area_inputs = area_section.find_elements(By.CSS_SELECTOR, "input.el-input__inner[role='spinbutton']")
+                
+                if not area_inputs:
+                    logger.warning("No spinbutton inputs found in #moreNSize")
+                    raise Exception("No area inputs found")
+                
+                # The first input is the minimum area
+                min_area_input = area_inputs[0]
+                logger.info(f"✓ Found area input (max={min_area_input.get_attribute('max')})")
+                
+                # Wait for input to be interactable
+                WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable(min_area_input)
+                )
+                logger.info("✓ Input is interactable")
+                
+                # 3. Clear and enter the minimum area
+                min_area_input.click()  # Click first to focus
+                time.sleep(0.5)
+                min_area_input.clear()
+                time.sleep(0.5)
+                min_area_input.send_keys(str(min_area))
+                time.sleep(1)
+                logger.info(f"✓ Entered {min_area} in area filter")
+                
+                # 4. Click "搜尋" (Search) button
+                # The search button is in the popup, find all search buttons
+                logger.info("Looking for '搜尋' button...")
+                search_btns = self.driver.find_elements(By.XPATH, "//button[contains(., '搜尋')]")
+                logger.info(f"Found {len(search_btns)} buttons containing '搜尋'")
+                
+                # Find the visible one
+                clicked = False
+                for btn in search_btns:
+                    try:
+                        if btn.is_displayed() and btn.is_enabled():
                             btn.click()
-                            logger.info("Applied filters")
+                            logger.info("✓ Clicked '搜尋' button (regular click)")
+                            clicked = True
                             break
+                    except:
+                        # Try JavaScript click
+                        try:
+                            self.driver.execute_script("arguments[0].click();", btn)
+                            logger.info("✓ Clicked '搜尋' button (JavaScript)")
+                            clicked = True
+                            break
+                        except:
+                            continue
+                
+                if not clicked:
+                    logger.warning("Could not click any '搜尋' button")
+                    raise Exception("Search button not clickable")
+                
+                # Wait for filtered results to load
+                logger.info("Waiting for filtered results...")
+                time.sleep(8)
                     
-                    time.sleep(5)
             except Exception as e:
                 logger.warning(f"Could not set area filter: {e}")
+                logger.info("Continuing without filter...")
             
             # Scrape all pages (will filter by date and area client-side)
             transactions = self._scrape_all_pages(start_date, end_date)
@@ -105,13 +159,31 @@ class CentalineWebScraper:
             
             # Debug: show area distribution
             if transactions:
-                areas = [int(t.get('area', 0)) for t in transactions]
-                logger.info(f"Area range: {min(areas)} - {max(areas)} sqft")
+                areas = [int(t.get('area', 0)) for t in transactions if t.get('area') and t.get('area') != '0']
+                if areas:
+                    logger.info(f"Area range: {min(areas)} - {max(areas)} sqft")
             
-            # Filter by minimum area (client-side filter as backup)
-            filtered = [t for t in transactions if int(t.get('area', 0)) > min_area]
+            # Filter by minimum area (client-side filter)
+            filtered = [t for t in transactions if int(t.get('area', 0)) >= min_area]
             
-            logger.info(f"Retrieved {len(filtered)} Centaline transactions (> {min_area} sqft, in date range)")
+            logger.info(f"Retrieved {len(filtered)} Centaline transactions (>= {min_area} sqft, in date range)")
+            
+            # Fill districts using AI
+            if filtered and self.ai_enabled:
+                filtered = self._fill_districts_with_ai(filtered)
+                
+                # Print warning to user
+                print("\n" + "⚠️ " * 40)
+                print("⚠️  WARNING: AI-GENERATED DISTRICT DATA")
+                print("⚠️ " * 40)
+                print(f"\n⚠️  Centaline scraper retrieved {len(filtered)} transactions.")
+                print(f"⚠️  Districts have been AUTOMATICALLY EXTRACTED using AI from property names.")
+                print(f"⚠️  ")
+                print(f"⚠️  ⚠️  PLEASE DOUBLE-CHECK DISTRICT DATA IN THE OUTPUT FILE!")
+                print(f"⚠️  ")
+                print(f"⚠️  All Centaline records in Trans_Commercial sheet have AI-generated districts.")
+                print("⚠️ " * 40 + "\n")
+            
             return filtered
             
         except Exception as e:
@@ -168,8 +240,9 @@ class CentalineWebScraper:
         """Scrape all pages of results"""
         all_transactions = []
         page = 1
-        max_pages = 50
+        max_pages = 10  # Limit to first 10 pages for residential (enough for recent data)
         pages_without_results = 0
+        pages_with_old_data = 0  # Track consecutive pages with only old data
         
         while page <= max_pages:
             logger.info(f"Scraping Centaline page {page}...")
@@ -178,19 +251,30 @@ class CentalineWebScraper:
             if page_transactions:
                 all_transactions.extend(page_transactions)
                 pages_without_results = 0
+                pages_with_old_data = 0
             else:
                 pages_without_results += 1
-                # Continue for a few more pages even if no results (might have older data)
+                # If we get no results at all on 3 consecutive pages, stop
                 if pages_without_results >= 3:
                     logger.info("No results on 3 consecutive pages, stopping")
                     break
             
+            # Check if we're getting only old data (before start_date)
+            if page_transactions:
+                recent_count = sum(1 for t in page_transactions if t.get('date_obj') and t['date_obj'] >= start_date)
+                if recent_count == 0:
+                    pages_with_old_data += 1
+                    if pages_with_old_data >= 2:
+                        logger.info("2 consecutive pages with only old data, stopping")
+                        break
+            
             # Try to go to next page
             if not self._go_to_next_page():
+                logger.info("Cannot go to next page, stopping")
                 break
             
             page += 1
-            time.sleep(2)
+            time.sleep(3)  # Longer delay to avoid rate limiting
         
         return all_transactions
     
@@ -238,6 +322,7 @@ class CentalineWebScraper:
         if len(cells) < 7:
             return None
         
+        
         trans = {
             'source': 'Centaline',  # Main source is Centaline
             'category': 'Residential',
@@ -273,13 +358,15 @@ class CentalineWebScraper:
         layout_div = cells[2].find('div')
         layout = layout_div.get_text(strip=True) if layout_div else ''
         
-        # Price
-        price_span = cells[3].find('span')
+        # Cell[3] is floor plan icon (empty), skip it
+        
+        # Price (Cell[4])
+        price_span = cells[4].find('span')
         price_str = price_span.get_text(strip=True) if price_span else '0'
         trans['price'] = self._parse_price(price_str)
         
-        # Area
-        area_div = cells[4].find('div')
+        # Area (Cell[5])
+        area_div = cells[5].find('div')
         area_str = area_div.get_text(strip=True) if area_div else ''
         area_match = re.search(r'([\d,]+)呎', area_str)
         if area_match:
@@ -289,8 +376,8 @@ class CentalineWebScraper:
             trans['area'] = '0'
             trans['area_unit'] = '0'
         
-        # Unit Price
-        unit_price_div = cells[5].find('div')
+        # Unit Price (Cell[6])
+        unit_price_div = cells[6].find('div')
         unit_price_str = unit_price_div.get_text(strip=True) if unit_price_div else ''
         unit_price_match = re.search(r'@\$?([\d,]+)', unit_price_str)
         if unit_price_match:
@@ -298,37 +385,16 @@ class CentalineWebScraper:
         else:
             trans['unit_price'] = '0'
         
-        # Source info (internal source within Centaline)
-        source_span = cells[6].find('span', class_='label')
+        # Source info (Cell[8] - internal source within Centaline)
+        source_span = cells[8].find('span', class_='label') if len(cells) > 8 else None
         source_info = source_span.get_text(strip=True) if source_span else ''
         # Store as additional info, but main source remains 'Centaline'
         trans['source_info'] = source_info
         
-        # District - try to extract from district tag in mobile UI
-        district = ''
-        # Look for district span with various possible selectors
-        district_selectors = [
-            'span.adress',
-            'span.tag-adress', 
-            'span[class*="district"]',
-            'span[class*="location"]',
-            'span[class*="adress"]'
-        ]
-        
-        # Try to find district in the property cell (cells[1])
-        for selector in district_selectors:
-            district_elem = cells[1].select_one(selector)
-            if district_elem:
-                district = district_elem.get_text(strip=True)
-                logger.info(f"Found district from selector '{selector}': {district}")
-                break
-        
-        # Fallback: extract from property name (first word)
-        if not district:
-            words = property_name.split()
-            district = words[0] if words else ''
-        
-        trans['district'] = district
+        # District - Centaline website doesn't show district in table
+        # We'll leave it as N/A for now - can be filled in later by AI or manual mapping
+        # NOTE: The old fallback of using first word of property name was incorrect
+        trans['district'] = 'N/A'
         
         # Asset type
         if '洋房' in property_full:
@@ -407,18 +473,68 @@ class CentalineWebScraper:
         else:
             return price_str
     
+    def _extract_district_with_ai(self, property_name: str) -> str:
+        """
+        Use AI to extract district from property name
+        
+        Args:
+            property_name: Full property name
+            
+        Returns:
+            District name or 'N/A' if cannot determine
+        """
+        if not self.ai_enabled or not property_name or not self.ai_helper:
+            return 'N/A'
+        
+        return self.ai_helper.extract_district(property_name)
+    
+    def _fill_districts_with_ai(self, transactions: List[Dict]) -> List[Dict]:
+        """
+        Fill missing districts using AI for all transactions
+        
+        Args:
+            transactions: List of transactions with district='N/A'
+            
+        Returns:
+            Transactions with AI-filled districts
+        """
+        if not self.ai_enabled:
+            return transactions
+        
+        logger.info(f"Using AI to extract districts for {len(transactions)} transactions...")
+        
+        for trans in transactions:
+            if trans.get('district') == 'N/A' or not trans.get('district'):
+                property_name = trans.get('property', '')
+                if property_name:
+                    district = self._extract_district_with_ai(property_name)
+                    trans['district'] = district
+                    trans['district_ai_generated'] = True  # Flag for user to verify
+        
+        return transactions
+    
     def _go_to_next_page(self) -> bool:
         """Navigate to next page"""
         try:
+            # Try to find the next page button
             next_btn = self.driver.find_element(By.CSS_SELECTOR, "i.el-icon-arrow-right")
             parent_btn = next_btn.find_element(By.XPATH, "..")
             
-            if 'is-disabled' not in parent_btn.get_attribute('class'):
-                parent_btn.click()
-                time.sleep(2)
-                return True
-        except:
-            pass
-        
-        return False
+            # Check if button is disabled
+            parent_class = parent_btn.get_attribute('class') or ''
+            if 'is-disabled' in parent_class or 'disabled' in parent_class:
+                logger.info("Next button is disabled - no more pages")
+                return False
+            
+            # Scroll button into view and use JavaScript to click (more reliable)
+            self.driver.execute_script("arguments[0].scrollIntoView(true);", parent_btn)
+            time.sleep(0.5)
+            self.driver.execute_script("arguments[0].click();", parent_btn)
+            logger.info("Clicked next page button (via JavaScript)")
+            time.sleep(4)  # Wait longer for page to load
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Could not find/click next page button: {type(e).__name__}")
+            return False
 

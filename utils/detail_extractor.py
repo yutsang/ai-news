@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Detail Extractor - Extract structured transaction details using DeepSeek AI
+Detail Extractor - Extract structured transaction details using AI
 """
 
 import yaml
@@ -10,6 +10,7 @@ from openai import OpenAI
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
+import httpx
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,22 +23,32 @@ class DetailExtractor:
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = yaml.safe_load(f)
         
-        deepseek_config = self.config['deepseek']
+        deepseek_config = self.config.get('deepseek', {})
+        api_key = deepseek_config.get('api_key', '')
         
-        # Initialize OpenAI client with base_url (works for both cloud and local AI)
-        # For local AI: set api_base to "http://localhost:1234/v1" or your local endpoint
-        # For cloud: use "https://api.deepseek.com"
-        self.client = OpenAI(
-            api_key=deepseek_config.get('api_key', 'local-key'),
-            base_url=deepseek_config.get('api_base', 'https://api.deepseek.com')
-        )
-        
-        # Support both 'model' and 'chat_model' config keys for compatibility
-        self.model = deepseek_config.get('chat_model', deepseek_config.get('model', 'deepseek-chat'))
-        self.temperature = deepseek_config.get('temperature', 0.3)
+        # Only initialize AI if API key is provided
+        if api_key and api_key.strip() and api_key != 'YOUR_API_KEY_HERE':
+            self.client = OpenAI(
+                api_key=api_key,
+                base_url=deepseek_config.get('api_base', 'https://api.deepseek.com'),
+                http_client=httpx.Client(verify=False)
+            )
+            self.model = deepseek_config.get('chat_model', deepseek_config.get('model', 'deepseek-chat'))
+            self.temperature = deepseek_config.get('temperature', 0.3)
+            self.ai_enabled = True
+        else:
+            self.client = None
+            self.model = None
+            self.temperature = 0.3
+            self.ai_enabled = False
+            logger.warning("No AI API key configured - AI features disabled")
     
     def extract_transaction_details(self, article: Dict) -> Dict:
         """Extract detailed transaction information"""
+        if not self.ai_enabled:
+            logger.warning("AI not enabled - returning basic details only")
+            return self._get_basic_transaction_details(article)
+        
         title = article.get('title', '')
         content = article.get('full_content', article.get('description', ''))
         date_str = article.get('date', '')
@@ -155,8 +166,39 @@ class DetailExtractor:
                 'buyer': 'N/A'
             }
     
+    def _get_basic_transaction_details(self, article: Dict) -> Dict:
+        """Get basic transaction details when AI is not available"""
+        title = article.get('title', '')
+        date_str = article.get('date', '')
+        
+        try:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            formatted_date = date_obj.strftime('%d/%m/%Y')
+        except:
+            formatted_date = date_str
+        
+        return {
+            'date': formatted_date,
+            'district': 'N/A',
+            'property': title[:50],
+            'asset_type': 'N/A',
+            'floor': 'N/A',
+            'unit': 'N/A',
+            'nature': 'N/A',
+            'price': 'N/A',
+            'area': 'N/A',
+            'unit_price': 'N/A',
+            'yield_rate': 'N/A',
+            'seller': 'N/A',
+            'buyer': 'N/A'
+        }
+    
     def extract_news_summary(self, article: Dict) -> Dict:
         """Extract news summary using AI"""
+        if not self.ai_enabled:
+            logger.warning("AI not enabled - returning basic news summary")
+            return self._get_basic_news_summary(article)
+        
         title = article.get('title', '')
         content = article.get('full_content', article.get('description', ''))
         date_str = article.get('date', '')
@@ -179,16 +221,19 @@ class DetailExtractor:
 
 **重要過濾規則**:
 1. **只選擇與物業估值、市場趨勢、價格分析直接相關的新聞**
-2. **排除以下類型**:
+2. **必須排除以下類型 (選General)**:
+   - **大灣區新聞** (任何提及大灣區、灣區、粵港澳大灣區的新聞)
+   - **內地地產新聞** (非香港本地的地產新聞，如深圳、廣州等)
    - 專欄作家文章 (專欄作家、專欄作者等)
    - 單一物業交易詳情 (只講某個物業的成交，沒有市場分析)
-   - 非香港地產新聞 (內地、海外地產新聞)
+   - 海外地產新聞
    - 與估值無關的一般新聞 (如社會新聞、政治新聞等)
    - **物業質素問題、投訴、驗收問題** (如樓花質素差誤、手工粗糙、空鼓、用料問題等，除非涉及估值影響)
    - **物業管理相關** (管理費、業主會、法團等，除非涉及估值)
-3. **必須是關於香港地產市場的估值、價格趨勢、市場分析**
-4. 政策新聞如果影響物業估值或市場價格，選Residential或Commercial；如果只是一般政策不涉及估值，選General
-5. 如果新聞不符合以上條件，請選擇"General"以排除
+3. **必須是關於香港本地地產市場的估值、價格趨勢、市場分析**
+4. 政策新聞如果影響香港物業估值或市場價格，選Residential或Commercial；如果只是一般政策不涉及估值，選General
+5. **重點**: 大灣區、內地、海外新聞 = General (排除)
+6. 如果新聞不符合以上條件，請選擇"General"以排除
 
 請以JSON格式回覆:
 {{
@@ -233,4 +278,23 @@ class DetailExtractor:
                 'summary': content[:120] if content else 'N/A',
                 'asset_category': 'General'
             }
+    
+    def _get_basic_news_summary(self, article: Dict) -> Dict:
+        """Get basic news summary when AI is not available"""
+        title = article.get('title', '')
+        content = article.get('full_content', article.get('description', ''))
+        date_str = article.get('date', '')
+        
+        try:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            formatted_date = date_obj.strftime('%d/%m/%Y')
+        except:
+            formatted_date = date_str
+        
+        return {
+            'date': formatted_date,
+            'topic': title,
+            'summary': content[:120] if content else 'N/A',
+            'asset_category': 'General'
+        }
 
