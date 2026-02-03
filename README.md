@@ -66,19 +66,34 @@ python main.py --start-date 2025-12-29 --end-date 2026-01-04
 ## 🔧 Configuration
 
 1. Copy sample config: `cp config.sample.yml config.yml`
-2. Edit `config.yml`:
+2. Edit `config.yml` and choose your AI setup:
 
+### Option 1: Cloud DeepSeek (Recommended)
 ```yaml
 deepseek:
-  api_key: "YOUR_API_KEY_HERE"  # Optional - leave empty to disable AI
+  api_key: "sk-your-deepseek-api-key"
   api_base: "https://api.deepseek.com"
   model: "deepseek-chat"
 ```
 
-**AI Features (Optional)**:
-- If `api_key` is provided: AI categorization, filtering, and deduplication enabled
-- If `api_key` is empty: Basic scraping only, no AI processing
-- This allows the scraper to run on different computers without requiring API keys
+### Option 2: Local AI (LM Studio, Ollama, etc.)
+```yaml
+deepseek:
+  api_key: "local-key"  # Any value works for local
+  api_base: "http://localhost:1234/v1"  # LM Studio default
+  model: "qwen2.5-32b-instruct"  # Your local model name
+```
+
+### Option 3: No AI (Basic Scraping Only)
+```yaml
+deepseek:
+  api_key: ""  # Leave empty to disable AI
+```
+
+**AI Features**:
+- **With AI**: Categorization, filtering, deduplication, district extraction
+- **Without AI**: Basic scraping only, no AI processing
+- **Cross-computer compatible**: Run on different machines with or without API keys
 
 ## 📦 Requirements
 

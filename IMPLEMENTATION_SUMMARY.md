@@ -114,7 +114,21 @@ Category (column N) appears before Source (column O) as requested.
 
 **API Key Handling**:
 ```yaml
-# config.yml
+# config.yml - Three options:
+
+# Option 1: Cloud DeepSeek
+deepseek:
+  api_key: "sk-your-api-key"
+  api_base: "https://api.deepseek.com"
+  model: "deepseek-chat"
+
+# Option 2: Local AI (LM Studio, Ollama, etc.)
+deepseek:
+  api_key: "local-key"
+  api_base: "http://localhost:1234/v1"
+  model: "qwen2.5-32b-instruct"
+
+# Option 3: No AI
 deepseek:
   api_key: ""  # Leave empty to disable AI features
 ```

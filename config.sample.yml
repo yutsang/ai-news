@@ -2,16 +2,36 @@
 # Copy this file to config.yml and fill in your API key
 
 # AI API Configuration
-# For cloud DeepSeek: use api_base: "https://api.deepseek.com"
-# For local AI (PC): use api_base: "http://localhost:1234/v1" or your local endpoint
-# Leave api_key empty to disable AI features (AI features will be skipped)
+# 
+# Option 1: Cloud DeepSeek (Recommended)
+# - api_base: "https://api.deepseek.com"
+# - api_key: "sk-your-deepseek-api-key"
+# - model: "deepseek-chat"
+#
+# Option 2: Local AI (LM Studio, Ollama, etc.)
+# - api_base: "http://localhost:1234/v1"  # LM Studio default
+# - api_key: "local-key"  # Any value works for local
+# - model: "your-model-name"  # Model loaded in LM Studio
+#
+# Option 3: Disable AI
+# - api_key: ""  # Leave empty to disable all AI features
+#
 deepseek:
-  api_key: ""  # Fill in your API key here, or leave empty to disable AI
-  api_base: "https://api.deepseek.com"
-  model: "deepseek-chat"
+  # Cloud DeepSeek setup (default):
+  api_key: ""  # Fill in your DeepSeek API key, or "local-key" for local AI, or leave empty to disable
+  api_base: "https://api.deepseek.com"  # Or "http://localhost:1234/v1" for local AI
+  model: "deepseek-chat"  # Or your local model name
   chat_model: "deepseek-chat"  # Alternative model name for compatibility
   temperature: 0.3
   max_tokens: 4000
+  
+  # Uncomment below for Local AI (LM Studio) setup:
+  # api_key: "local-key"
+  # api_base: "http://localhost:1234/v1"
+  # model: "qwen2.5-32b-instruct"  # Example: your local model name
+  # chat_model: "qwen2.5-32b-instruct"
+  # temperature: 0.3
+  # max_tokens: 4000
 
 # Scraping Configuration
 scraping:
