@@ -5,6 +5,7 @@ Scrapes news articles from https://852.house/zh/newses with date filtering
 """
 
 import requests
+import urllib3
 from bs4 import BeautifulSoup
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -31,14 +32,21 @@ class House852Scraper:
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = yaml.safe_load(f)
         
-        self.base_url = self.config['scraping']['base_url']
-        self.max_retries = self.config['scraping']['max_retries']
-        self.retry_delay = self.config['scraping']['retry_delay']
-        self.timeout = self.config['scraping']['timeout']
-        
+        scraping = self.config['scraping']
+        self.base_url = scraping['base_url']
+        self.max_retries = scraping['max_retries']
+        self.retry_delay = scraping['retry_delay']
+        self.timeout = scraping['timeout']
+        self.verify_ssl = scraping.get('verify_ssl', True)
+
+        if not self.verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            logger.warning("SSL verification disabled — corporate proxy mode active")
+
         self.session = requests.Session()
+        self.session.verify = self.verify_ssl
         self.session.headers.update({
-            'User-Agent': self.config['scraping']['user_agent'],
+            'User-Agent': scraping['user_agent'],
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'zh-HK,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br',
@@ -56,12 +64,41 @@ class House852Scraper:
             HTML content or None if failed
         """
         url = f"{self.base_url}?page={page}"
-        
+
         for attempt in range(self.max_retries):
             try:
                 response = self.session.get(url, timeout=self.timeout)
                 response.raise_for_status()
                 return response.text
+            except requests.exceptions.SSLError as e:
+                # Corporate SSL inspection — retry once without verification
+                if self.verify_ssl:
+                    logger.warning(
+                        "SSL certificate error detected (corporate proxy?). "
+                        "Retrying without SSL verification. "
+                        "Set verify_ssl: false in config.yml to silence this warning."
+                    )
+                    try:
+                        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                        response = self.session.get(url, timeout=self.timeout, verify=False)
+                        response.raise_for_status()
+                        return response.text
+                    except Exception as inner_e:
+                        logger.error(f"Still failed after SSL bypass: {inner_e}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                else:
+                    logger.error(f"Failed to fetch page {page} after {self.max_retries} attempts (SSL error)")
+                    print(f"  ✗ Cannot reach {url} — SSL error. If on a corporate network, set verify_ssl: false in config.yml")
+                    return None
+            except requests.exceptions.ConnectionError as e:
+                logger.warning(f"Attempt {attempt + 1}/{self.max_retries} — connection error for page {page}: {e}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                else:
+                    logger.error(f"Failed to fetch page {page} — host unreachable")
+                    print(f"  ✗ Cannot reach {url} — check your internet/VPN connection")
+                    return None
             except requests.RequestException as e:
                 logger.warning(f"Attempt {attempt + 1}/{self.max_retries} failed for page {page}: {e}")
                 if attempt < self.max_retries - 1:
@@ -181,9 +218,13 @@ class House852Scraper:
         """
         for attempt in range(self.max_retries):
             try:
-                response = self.session.get(url, timeout=self.timeout)
+                try:
+                    response = self.session.get(url, timeout=self.timeout)
+                except requests.exceptions.SSLError:
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                    response = self.session.get(url, timeout=self.timeout, verify=False)
                 response.raise_for_status()
-                
+
                 soup = BeautifulSoup(response.text, 'html.parser')
                 
                 # Extract source from: <div class="px-md-1 px-2"><small><span class="mr-1">...</span><span class="mr-1">經濟日報</span></small></div>

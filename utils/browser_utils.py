@@ -34,9 +34,12 @@ def create_driver(
     """
     on_windows = platform.system() == "Windows"
 
-    def _build_options(OptionsClass):
+    def _build_options(OptionsClass, translate_incognito: bool = False):
         opts = OptionsClass()
         for arg in args or []:
+            # --incognito is Chrome-only; Edge uses --inprivate
+            if translate_incognito and arg == '--incognito':
+                arg = '--inprivate'
             opts.add_argument(arg)
         for key, value in (experimental or {}).items():
             opts.add_experimental_option(key, value)
@@ -51,7 +54,7 @@ def create_driver(
         from webdriver_manager.microsoft import EdgeChromiumDriverManager
 
         logger.info("Windows detected — launching Microsoft Edge via EdgeChromiumDriverManager")
-        options = _build_options(EdgeOptions)
+        options = _build_options(EdgeOptions, translate_incognito=True)
         service = EdgeService(EdgeChromiumDriverManager().install())
         return webdriver.Edge(service=service, options=options)
     else:

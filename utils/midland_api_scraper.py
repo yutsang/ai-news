@@ -51,6 +51,10 @@ class MidlandAPIScraper:
             f'--user-agent={random.choice(user_agents)}',
         ]
 
+        import platform
+        on_windows = platform.system() == "Windows"
+        browser_name = "Edge" if on_windows else "Chrome"
+
         driver = None
         try:
             driver = create_driver(
@@ -61,18 +65,19 @@ class MidlandAPIScraper:
                 },
                 capabilities={'goog:loggingPrefs': {'performance': 'ALL'}},
             )
-            logger.info("Created fresh browser session for Midland API")
-            logger.info("Opening Midland ICI website to retrieve auth token...")
-            
-            # Navigate to Midland ICI
-            driver.get("https://www.midlandici.com.hk/")
-            time.sleep(5)  # Wait for page load
-            
-            # Try to get token from localStorage or sessionStorage
+            logger.info(f"Created fresh {browser_name} session for Midland API")
+
+            # Go directly to the commercial transaction search page — this triggers
+            # the API call immediately without needing extra clicks.
+            transaction_url = "https://www.midlandici.com.hk/transaction/commercial"
+            logger.info(f"Navigating to Midland transaction page: {transaction_url}")
+            driver.get(transaction_url)
+            time.sleep(8)  # Allow React/Vue app and API calls to fully load
+
+            # --- Strategy 1: check browser storage for a token ---
             try:
                 token = driver.execute_script("""
-                    // Try to find token in various storage locations
-                    return localStorage.getItem('auth_token') || 
+                    return localStorage.getItem('auth_token') ||
                            localStorage.getItem('token') ||
                            sessionStorage.getItem('auth_token') ||
                            sessionStorage.getItem('token');
@@ -80,40 +85,51 @@ class MidlandAPIScraper:
                 if token:
                     logger.info("Found token in browser storage")
                     return f"Bearer {token}" if not token.startswith('Bearer') else token
-            except:
+            except Exception:
                 pass
-            
-            # If not in storage, trigger a search to generate API call
+
+            # --- Strategy 2: extract Bearer token from CDP performance logs ---
+            def _scan_logs(logs):
+                for entry in logs:
+                    try:
+                        msg = json.loads(entry['message'])['message']
+                        if msg.get('method') == 'Network.requestWillBeSent':
+                            request = msg.get('params', {}).get('request', {})
+                            req_url = request.get('url', '')
+                            if 'midlandici.com.hk' in req_url:
+                                headers = request.get('headers', {})
+                                auth = headers.get('Authorization') or headers.get('authorization', '')
+                                if auth and 'Bearer' in auth:
+                                    return auth
+                    except Exception:
+                        pass
+                return None
+
+            token = _scan_logs(driver.get_log('performance'))
+            if token:
+                logger.info("Extracted auth token from network logs (page load)")
+                return token
+
+            # --- Strategy 3: trigger a search click then re-scan logs ---
             try:
-                # Click on transaction search or any action that triggers the API
-                search_btn = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "//a[contains(@href, 'transaction') or contains(text(), '成交')]"))
+                search_link = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located(
+                        (By.XPATH, "//a[contains(@href,'transaction') or contains(text(),'成交')]")
+                    )
                 )
-                driver.execute_script("arguments[0].click();", search_btn)
-                time.sleep(3)
-            except:
-                logger.warning("Could not trigger search, attempting to extract from network logs")
-            
-            # Extract token from network logs
-            logs = driver.get_log('performance')
-            for entry in logs:
-                try:
-                    log = json.loads(entry['message'])['message']
-                    if log.get('method') == 'Network.requestWillBeSent':
-                        request = log.get('params', {}).get('request', {})
-                        headers = request.get('headers', {})
-                        
-                        # Check if this is a Midland API request
-                        url = request.get('url', '')
-                        if 'midlandici.com.hk' in url and 'transaction' in url:
-                            auth_header = headers.get('Authorization') or headers.get('authorization')
-                            if auth_header and 'Bearer' in auth_header:
-                                logger.info("Extracted auth token from network request")
-                                return auth_header
-                except:
-                    continue
-            
-            logger.warning("Could not extract auth token from browser")
+                driver.execute_script("arguments[0].click();", search_link)
+                time.sleep(5)
+                token = _scan_logs(driver.get_log('performance'))
+                if token:
+                    logger.info("Extracted auth token from network logs (after click)")
+                    return token
+            except Exception:
+                logger.warning("Could not trigger search click; no additional logs to scan")
+
+            logger.warning(
+                f"Could not extract auth token from {browser_name}. "
+                "The Midland website may have changed its auth flow."
+            )
             return None
             
         except Exception as e:
