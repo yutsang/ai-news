@@ -6,16 +6,15 @@ Automatically retrieves authorization token using ChromeDriver
 
 import requests
 import time
+import random
+import json
 from datetime import datetime
 from typing import List, Dict, Optional
 import logging
-import random
-from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import json
+from .browser_utils import create_driver
 
 logger = logging.getLogger(__name__)
 
@@ -33,38 +32,36 @@ class MidlandAPIScraper:
         Opens Midland website with fresh session to avoid tracking
         Uses ChromeDriver with clean profile every time
         """
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        
-        # Force fresh session - disable cache and use new profile every time
-        chrome_options.add_argument('--disable-cache')
-        chrome_options.add_argument('--disable-application-cache')
-        chrome_options.add_argument('--disable-offline-load-stale-cache')
-        chrome_options.add_argument('--disk-cache-size=0')
-        chrome_options.add_argument('--incognito')  # Use incognito mode for fresh session
-        
-        # Randomize user agent to avoid tracking
-        import random
         user_agents = [
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
         ]
-        chrome_options.add_argument(f'--user-agent={random.choice(user_agents)}')
-        
-        # Enable performance logging to capture network requests
-        chrome_options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
-        
+
+        driver_args = [
+            '--headless',
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-cache',
+            '--disable-application-cache',
+            '--disable-offline-load-stale-cache',
+            '--disk-cache-size=0',
+            '--incognito',
+            f'--user-agent={random.choice(user_agents)}',
+        ]
+
         driver = None
         try:
-            # Create new ChromeDriver instance with fresh session
-            driver = webdriver.Chrome(options=chrome_options)
-            logger.info("Created fresh ChromeDriver session for Midland API")
+            driver = create_driver(
+                args=driver_args,
+                experimental={
+                    'excludeSwitches': ['enable-automation'],
+                    'useAutomationExtension': False,
+                },
+                capabilities={'goog:loggingPrefs': {'performance': 'ALL'}},
+            )
+            logger.info("Created fresh browser session for Midland API")
             logger.info("Opening Midland ICI website to retrieve auth token...")
             
             # Navigate to Midland ICI
@@ -145,15 +142,9 @@ class MidlandAPIScraper:
         page = 1
         max_pages = 100
         
-        # Try multiple date formats to see which one works
-        # Format 1: YYYY-MM-DD (standard ISO)
         date_from_iso = start_date.strftime('%Y-%m-%d')
         date_to_iso = end_date.strftime('%Y-%m-%d')
-        
-        # Format 2: Unix timestamp
-        date_from_ts = int(start_date.timestamp() * 1000)  # Milliseconds
-        date_to_ts = int(end_date.timestamp() * 1000)
-        
+
         logger.info(f"Fetching Midland transactions: {date_from_iso} to {date_to_iso}, min area: {min_area} sqft")
         print(f"  → Requesting Midland API: dateFrom={date_from_iso}, dateTo={date_to_iso}")
         

@@ -24,8 +24,6 @@ from utils.ai_categorizer import DeepSeekCategorizer
 from utils.transaction_filter import filter_transactions
 from utils.detail_extractor import DetailExtractor
 from utils.excel_formatter import ExcelFormatter
-from utils.centaline_parser import CentalineParser
-from utils.midland_parser import MidlandParser
 from utils.centaline_web_scraper import CentalineWebScraper
 from utils.midland_api_scraper import MidlandAPIScraper
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -323,49 +321,39 @@ def main():
         
         # Quick categorization to identify news (using just title + tags)
         news_candidates = []
+        trans_keywords = ['成交', '沽', '售', '租', '億', '萬', '呎']
         for article in html_pages:
             title = article.get('title', '').lower()
             tags = ' '.join(article.get('tags', [])).lower()
-            text = f"{title} {tags}"
-            
-            # If no transaction keywords, likely news
-            trans_keywords = ['成交', '沽', '售', '租', '億', '萬', '呎']
-            if not any(kw in text for kw in trans_keywords):
+            if not any(kw in f"{title} {tags}" for kw in trans_keywords):
                 news_candidates.append(article)
         
         print(f"  → Transactions: {filtered_count} (from {total} total)")
         print(f"  → News candidates: {len(news_candidates)}")
         print(f"  → API calls saved: ~{total - filtered_count - len(news_candidates)}")
         
-        # Combine filtered transactions and news candidates
-        articles = transaction_articles + news_candidates
-        
-        print(f"\n✓ Total to process: {len(articles)} articles ({len(transaction_articles)} transactions + {len(news_candidates)} news)")
-        
-        # Deduplicate news candidates by topic BEFORE AI categorization (to save API calls)
+        # Deduplicate news candidates by title before AI categorization (saves API calls)
         if news_candidates:
             print(f"\n  → Deduplicating news by topic before AI categorization...")
-            seen_topics = {}
+            seen_topics: dict = {}
             unique_news_candidates = []
             for article in news_candidates:
-                title = article.get('title', '').strip()
-                # Use title as topic key (normalized)
-                topic_key = title.lower().strip()
+                topic_key = article.get('title', '').lower().strip()
                 if topic_key and topic_key not in seen_topics:
-                    seen_topics[topic_key] = article
+                    seen_topics[topic_key] = True
                     unique_news_candidates.append(article)
-            
-            if len(unique_news_candidates) < len(news_candidates):
-                print(f"  → Deduplicated: {len(unique_news_candidates)} unique news (removed {len(news_candidates) - len(unique_news_candidates)} duplicates)")
-                # Replace news_candidates with deduplicated version
-                news_candidates = unique_news_candidates
-                # Rebuild articles list
-                articles = transaction_articles + news_candidates
+            removed = len(news_candidates) - len(unique_news_candidates)
+            if removed:
+                print(f"  → Deduplicated: {len(unique_news_candidates)} unique news (removed {removed} duplicates)")
+            news_candidates = unique_news_candidates
+        
+        articles = transaction_articles + news_candidates
+        print(f"\n✓ Total to process: {len(articles)} articles ({len(transaction_articles)} transactions + {len(news_candidates)} news)")
         
         # Quick mode: limit to first articles
         if args.quick:
             original_count = len(articles)
-            articles = articles[:20]  # Take first 20 for quick testing
+            articles = articles[:20]
             print(f"  → Quick mode: Processing first {len(articles)} articles (out of {original_count})")
         
         print(f"\n[STEP 3/6] AI categorization using DeepSeek (parallel: 10 workers)")

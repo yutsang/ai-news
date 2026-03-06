@@ -3,12 +3,9 @@
 Centaline web scraper - fetches residential property transactions
 """
 
-from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
 from bs4 import BeautifulSoup
 import time
 import re
@@ -17,6 +14,7 @@ from typing import List, Dict, Optional
 import logging
 import yaml
 from .ai_helper import AIHelper
+from .browser_utils import create_driver
 
 logger = logging.getLogger(__name__)
 
@@ -47,17 +45,22 @@ class CentalineWebScraper:
     def fetch_transactions(self, start_date: datetime, end_date: datetime, min_area: int = 2000) -> List[Dict]:
         """Fetch transactions from Centaline website - filter by area >2000 sqft only"""
         
-        chrome_options = Options()
+        driver_args = [
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--window-size=1920,1080',
+            '--disable-blink-features=AutomationControlled',
+        ]
         if self.headless:
-            chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--window-size=1920,1080')  # Desktop size for better compatibility
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        
-        self.driver = webdriver.Chrome(options=chrome_options)
+            driver_args.append('--headless')
+
+        self.driver = create_driver(
+            args=driver_args,
+            experimental={
+                'excludeSwitches': ['enable-automation'],
+                'useAutomationExtension': False,
+            },
+        )
         
         try:
             url = "https://hk.centanet.com/findproperty/list/transaction"
@@ -193,48 +196,6 @@ class CentalineWebScraper:
             if self.driver:
                 self.driver.quit()
                 self.driver = None
-    
-    def _set_date_range(self, start_date: datetime, end_date: datetime):
-        """Set date range to last 30 days"""
-        try:
-            # Click on the date filter button (3年 -> 30日)
-            date_btns = self.driver.find_elements(By.XPATH, "//button[contains(@class, 'btn-fiter')]//span[contains(text(), '30日')]")
-            for btn in date_btns:
-                if btn.is_displayed():
-                    btn.click()
-                    time.sleep(1)
-                    break
-        except:
-            pass
-    
-    def _set_min_area(self, min_area: int):
-        """Set minimum area filter"""
-        try:
-            # Open "更多" popup
-            more_btn = self.driver.find_element(By.XPATH, "//button[contains(., '更多')]")
-            more_btn.click()
-            time.sleep(1)
-            
-            # Find area inputs
-            area_inputs = self.driver.find_elements(By.XPATH, "//div[@id='moreNSize']//input[@type='text']")
-            if area_inputs:
-                area_inputs[0].clear()
-                area_inputs[0].send_keys(str(min_area))
-                time.sleep(0.5)
-        except:
-            pass
-    
-    def _click_search(self):
-        """Click search button"""
-        try:
-            search_btns = self.driver.find_elements(By.XPATH, "//button[contains(., '搜尋')]")
-            for btn in search_btns:
-                if btn.is_displayed() and btn.is_enabled():
-                    btn.click()
-                    time.sleep(3)
-                    break
-        except:
-            pass
     
     def _scrape_all_pages(self, start_date: datetime, end_date: datetime) -> List[Dict]:
         """Scrape all pages of results"""
