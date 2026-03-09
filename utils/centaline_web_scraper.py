@@ -12,9 +12,9 @@ import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import logging
-import yaml
 from .ai_helper import AIHelper
 from .browser_utils import create_driver
+from .utils import parse_hk_price
 
 logger = logging.getLogger(__name__)
 
@@ -247,13 +247,6 @@ class CentalineWebScraper:
             time.sleep(3)
             page_source = self.driver.page_source
             
-            # Save page for debugging (first page only)
-            if not hasattr(self, '_page_saved'):
-                with open('centaline_debug.html', 'w', encoding='utf-8') as f:
-                    f.write(page_source)
-                self._page_saved = True
-                logger.info("Saved page to centaline_debug.html")
-            
             soup = BeautifulSoup(page_source, 'html.parser')
             
             # Find transaction rows
@@ -324,7 +317,7 @@ class CentalineWebScraper:
         # Price (Cell[4])
         price_span = cells[4].find('span')
         price_str = price_span.get_text(strip=True) if price_span else '0'
-        trans['price'] = self._parse_price(price_str)
+        trans['price'] = parse_hk_price(price_str)
         
         # Area (Cell[5])
         area_div = cells[5].find('div')
@@ -418,21 +411,6 @@ class CentalineWebScraper:
                     unit = unit_match.group(2).replace('室', '')
         
         return property_name, floor, unit
-    
-    def _parse_price(self, price_str: str) -> str:
-        """Parse price string to integer"""
-        # Remove $ and commas
-        price_str = price_str.replace('$', '').replace(',', '')
-        
-        # Handle 萬 (10,000) and 億 (100,000,000)
-        if '億' in price_str:
-            num = float(re.sub(r'[^0-9.]', '', price_str))
-            return str(int(num * 100000000))
-        elif '萬' in price_str:
-            num = float(re.sub(r'[^0-9.]', '', price_str))
-            return str(int(num * 10000))
-        else:
-            return price_str
     
     def _extract_district_with_ai(self, property_name: str) -> str:
         """

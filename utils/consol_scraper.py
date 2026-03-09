@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-852.House News Scraper
-Scrapes news articles from https://852.house/zh/newses with date filtering
+Primary news source scraper — fetches articles with date filtering.
 """
 
 import requests
@@ -11,26 +10,17 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import time
 import logging
-from tqdm import tqdm
-import yaml
 import re
+from .utils import load_config
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class House852Scraper:
-    """Scraper for 852.house news website"""
-    
+    """Scraper for the primary news source."""
+
     def __init__(self, config_path: str = "config.yml"):
-        """
-        Initialize the scraper with configuration
-        
-        Args:
-            config_path: Path to the YAML configuration file
-        """
-        with open(config_path, 'r', encoding='utf-8') as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
         
         scraping = self.config['scraping']
         self.base_url = scraping['base_url']
@@ -400,121 +390,5 @@ class House852Scraper:
                         'success': False
                     }
     
-    def scrape_news(self, start_date: datetime, end_date: datetime) -> List[Dict]:
-        """
-        Scrape news articles within the specified date range
-        
-        Args:
-            start_date: Start date for scraping
-            end_date: End date for scraping
-            
-        Returns:
-            List of news articles with full content
-        """
-        logger.info(f"Starting scrape from {start_date.date()} to {end_date.date()}")
-        
-        all_news = []
-        page = 1
-        should_continue = True
-        
-        # Create progress bar
-        pbar = tqdm(desc="Scraping pages", unit="page")
-        
-        while should_continue:
-            pbar.set_description(f"Scraping page {page}")
-            
-            # Fetch page
-            html = self.fetch_page(page)
-            
-            if not html:
-                logger.warning(f"Failed to fetch page {page}, stopping")
-                break
-            
-            # Extract news items
-            news_items = self.extract_news_items(html)
-            
-            if not news_items:
-                logger.info(f"No news items found on page {page}, stopping")
-                break
-            
-            # Process each news item
-            page_earliest_date = None
-            items_in_range = 0
-            
-            for item in news_items:
-                # Parse date
-                if item['date']:
-                    item_date = self.parse_date(item['date'])
-                    if item_date:
-                        # Update earliest date on this page
-                        if page_earliest_date is None or item_date < page_earliest_date:
-                            page_earliest_date = item_date
-                        
-                        # Check if within date range
-                        if start_date <= item_date <= end_date:
-                            all_news.append(item)
-                            items_in_range += 1
-                        elif item_date < start_date:
-                            # We've gone past the start date, stop scraping
-                            should_continue = False
-            
-            # Update progress bar with earliest date info
-            if page_earliest_date:
-                pbar.set_postfix({
-                    'earliest_date': page_earliest_date.strftime('%Y-%m-%d'),
-                    'in_range': items_in_range
-                })
-            
-            pbar.update(1)
-            
-            # If we found items before the start date, stop
-            if page_earliest_date and page_earliest_date < start_date:
-                logger.info(f"Reached date {page_earliest_date.date()} before start date, stopping")
-                should_continue = False
-            
-            # If no items in range on this page, might be done
-            if items_in_range == 0 and page > 1:
-                logger.info(f"No items in date range on page {page}, stopping")
-                should_continue = False
-            
-            page += 1
-            
-            # Small delay to be respectful to the server
-            time.sleep(0.5)
-        
-        pbar.close()
-        
-        logger.info(f"Found {len(all_news)} news items in date range")
-        
-        # Now fetch full content for each article
-        logger.info("Fetching full article content...")
-        
-        for item in tqdm(all_news, desc="Fetching articles", unit="article"):
-            article_data = self.fetch_article_content(item['url'])
-            item['full_content'] = article_data['content']
-            item['fetch_success'] = article_data['success']
-            
-            # Small delay between requests
-            time.sleep(0.3)
-        
-        return all_news
-
-
-if __name__ == "__main__":
-    # Test the scraper
-    scraper = House852Scraper()
-    
-    # Test with a small date range
-    start = datetime(2025, 12, 13)
-    end = datetime(2025, 12, 14)
-    
-    news = scraper.scrape_news(start, end)
-    
-    print(f"\nFound {len(news)} articles")
-    for item in news[:3]:  # Show first 3
-        print(f"\nTitle: {item['title']}")
-        print(f"Date: {item['date']}")
-        print(f"URL: {item['url']}")
-        print(f"Tags: {', '.join(item['tags'])}")
 
 

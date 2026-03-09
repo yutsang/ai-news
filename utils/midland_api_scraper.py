@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Midland ICI API scraper - fetches commercial property transactions
-Automatically retrieves authorization token using ChromeDriver
+Commercial property transaction scraper.
+Retrieves an auth token automatically via Chrome, then calls the data API directly.
 """
 
 import requests
@@ -11,9 +11,6 @@ import json
 from datetime import datetime
 from typing import List, Dict, Optional
 import logging
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from .browser_utils import create_driver
 
 logger = logging.getLogger(__name__)
@@ -51,10 +48,6 @@ class MidlandAPIScraper:
             f'--user-agent={random.choice(user_agents)}',
         ]
 
-        import platform
-        on_windows = platform.system() == "Windows"
-        browser_name = "Edge" if on_windows else "Chrome"
-
         driver = None
         try:
             driver = create_driver(
@@ -65,40 +58,94 @@ class MidlandAPIScraper:
                 },
                 capabilities={'goog:loggingPrefs': {'performance': 'ALL'}},
             )
-            logger.info(f"Created fresh {browser_name} session for Midland API")
+            logger.info("Created fresh Chrome session for Midland API")
 
-            # Go directly to the commercial transaction search page — this triggers
-            # the API call immediately without needing extra clicks.
+            # ── Strategy 0: Inject a JS interceptor BEFORE the page loads ──────────
+            # This runs ahead of any page script and captures the Bearer token the
+            # instant the site's own JS makes a fetch() or XHR with Authorization.
+            driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+                'source': """
+                    window.__captured_auth = null;
+
+                    // Intercept fetch()
+                    const _origFetch = window.fetch;
+                    window.fetch = function(url, opts) {
+                        if (opts && opts.headers) {
+                            let auth = null;
+                            if (opts.headers instanceof Headers) {
+                                auth = opts.headers.get('Authorization') ||
+                                       opts.headers.get('authorization');
+                            } else {
+                                auth = opts.headers['Authorization'] ||
+                                       opts.headers['authorization'];
+                            }
+                            if (auth && auth.includes('Bearer')) {
+                                window.__captured_auth = auth;
+                            }
+                        }
+                        return _origFetch.apply(this, arguments);
+                    };
+
+                    // Intercept XMLHttpRequest
+                    const _origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+                    XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+                        if (name.toLowerCase() === 'authorization' &&
+                            value && value.includes('Bearer')) {
+                            window.__captured_auth = value;
+                        }
+                        return _origSetHeader.apply(this, arguments);
+                    };
+                """
+            })
+
+            # Navigate to the transaction search page — the SPA will auto-fire the API
             transaction_url = "https://www.midlandici.com.hk/transaction/commercial"
-            logger.info(f"Navigating to Midland transaction page: {transaction_url}")
+            logger.info(f"Navigating to: {transaction_url}")
             driver.get(transaction_url)
-            time.sleep(8)  # Allow React/Vue app and API calls to fully load
+            time.sleep(10)  # Allow the React/Vue app and all API calls to settle
 
-            # --- Strategy 1: check browser storage for a token ---
-            try:
-                token = driver.execute_script("""
-                    return localStorage.getItem('auth_token') ||
-                           localStorage.getItem('token') ||
-                           sessionStorage.getItem('auth_token') ||
-                           sessionStorage.getItem('token');
-                """)
-                if token:
-                    logger.info("Found token in browser storage")
-                    return f"Bearer {token}" if not token.startswith('Bearer') else token
-            except Exception:
-                pass
+            # ── Strategy 0 result: read what the JS interceptor captured ──────────
+            token = driver.execute_script("return window.__captured_auth;")
+            if token:
+                logger.info("Captured auth token via JS fetch/XHR interceptor")
+                return token if token.startswith('Bearer') else f'Bearer {token}'
 
-            # --- Strategy 2: extract Bearer token from CDP performance logs ---
+            # ── Strategy 1: exhaustive search of all browser storage ──────────────
+            token = driver.execute_script("""
+                function findToken(storage) {
+                    for (var i = 0; i < storage.length; i++) {
+                        var key = storage.key(i);
+                        var val = storage.getItem(key);
+                        if (!val) continue;
+                        if (val.startsWith('Bearer ') || val.startsWith('ey')) return val;
+                        try {
+                            var obj = JSON.parse(val);
+                            var t = obj && (obj.token || obj.access_token ||
+                                            obj.auth_token || obj.jwt ||
+                                            obj.accessToken || obj.authToken);
+                            if (t) return t;
+                        } catch(e) {}
+                    }
+                    return null;
+                }
+                return findToken(localStorage) || findToken(sessionStorage);
+            """)
+            if token:
+                logger.info("Found token in browser storage")
+                return token if token.startswith('Bearer') else f'Bearer {token}'
+
+            # ── Strategy 2: scan CDP performance logs (broad — all requests) ──────
             def _scan_logs(logs):
                 for entry in logs:
                     try:
                         msg = json.loads(entry['message'])['message']
                         if msg.get('method') == 'Network.requestWillBeSent':
-                            request = msg.get('params', {}).get('request', {})
-                            req_url = request.get('url', '')
-                            if 'midlandici.com.hk' in req_url:
-                                headers = request.get('headers', {})
-                                auth = headers.get('Authorization') or headers.get('authorization', '')
+                            req = msg.get('params', {}).get('request', {})
+                            headers = req.get('headers', {})
+                            for hname in ('Authorization', 'authorization',
+                                          'x-auth-token', 'X-Auth-Token',
+                                          'x-access-token', 'X-Access-Token'):
+                                auth = headers.get(hname, '')
                                 if auth and 'Bearer' in auth:
                                     return auth
                     except Exception:
@@ -107,28 +154,35 @@ class MidlandAPIScraper:
 
             token = _scan_logs(driver.get_log('performance'))
             if token:
-                logger.info("Extracted auth token from network logs (page load)")
+                logger.info("Extracted auth token from CDP network logs")
                 return token
 
-            # --- Strategy 3: trigger a search click then re-scan logs ---
+            # ── Strategy 3: check cookies for token-shaped values ─────────────────
+            for cookie in driver.get_cookies():
+                val = cookie.get('value', '')
+                name = cookie.get('name', '').lower()
+                if any(k in name for k in ('token', 'auth', 'jwt', 'access')) and len(val) > 20:
+                    logger.info(f"Found token in cookie '{cookie['name']}'")
+                    return val if val.startswith('Bearer') else f'Bearer {val}'
+
+            # ── Strategy 4: scroll to trigger lazy-loaded API calls, re-scan ──────
             try:
-                search_link = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located(
-                        (By.XPATH, "//a[contains(@href,'transaction') or contains(text(),'成交')]")
-                    )
-                )
-                driver.execute_script("arguments[0].click();", search_link)
-                time.sleep(5)
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(4)
                 token = _scan_logs(driver.get_log('performance'))
                 if token:
-                    logger.info("Extracted auth token from network logs (after click)")
+                    logger.info("Extracted auth token from CDP logs (after scroll)")
                     return token
+                token = driver.execute_script("return window.__captured_auth;")
+                if token:
+                    logger.info("Captured auth token via JS interceptor (after scroll)")
+                    return token if token.startswith('Bearer') else f'Bearer {token}'
             except Exception:
-                logger.warning("Could not trigger search click; no additional logs to scan")
+                pass
 
             logger.warning(
-                f"Could not extract auth token from {browser_name}. "
-                "The Midland website may have changed its auth flow."
+                "Could not extract Midland auth token — "
+                "the site's auth flow may have changed."
             )
             return None
             

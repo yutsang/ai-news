@@ -1,168 +1,101 @@
-# Hong Kong Property News Scraper
+# HK Property News Scraper
 
-Automated scraper for Hong Kong property news, transactions, and market data. Generates professional Excel reports with AI-categorized content.
+Automated scraper for Hong Kong property transactions and market news.
+Generates a multi-sheet Excel report, AI-categorised and filtered for market relevance.
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Configure API key
-cp config.sample.yml config.yml
-# Edit config.yml and add your DeepSeek API key (optional - AI features will be disabled if not provided)
-
-# Run the scraper
+cp config.yml.example config.yml   # then fill in your AI API key
 python main.py
 ```
 
-**Note**: AI features are optional. If you don't provide an API key, the scraper will still work but without AI categorization and filtering.
+> **config.yml is not committed to the repository.** Create it from the template and keep it local.
 
-## 📊 What It Does
+## What It Produces
 
-Automatically collects and processes:
+An Excel workbook with four sheets, written to `output/`:
 
-1. **Property Transactions** (3 sources)
-   - Centaline: Residential transactions (> 2000 sqft)
-   - Midland ICI: Commercial transactions (> 2500 sqft)  
-   - 852.house: Major transactions (>= $20M or >= 2000 sqft)
+| Sheet | Content |
+|-------|---------|
+| `major_trans` | High-value transactions (≥ $20M or ≥ 2 000 sqft) from the news source |
+| `news` | Top 15-20 market-relevant news articles, AI-ranked and deduplicated |
+| `Trans_Commercial` | Residential + commercial property transactions from data providers |
+| `new_property` | New project launches with price-list dates in the selected week |
 
-2. **Real Estate News** (852.house)
-   - AI-categorized and filtered
-   - Top 15-20 market-relevant articles
-   - Duplicates removed
+## Usage
 
-## 📋 Output
-
-Generates Excel file: `output/property_report_YYMMDD_HHMMSS.xlsx`
-
-### 4 Sheets:
-
-| Sheet | Content | Typical Count |
-|-------|---------|---------------|
-| **major_trans** | High-value transactions from 852.house | 20-30 |
-| **news** | Top market-relevant news articles | 15-20 |
-| **Trans_Commercial** | All property transactions (Centaline + Midland) | 50-70 |
-| **new_property** | New property launches | 0-10 |
-
-## 🎯 Expected Results (Per Week)
-
-- **Residential** (Centaline): 10-15 transactions
-- **Commercial** (Midland ICI): 40-50 transactions
-- **News** (852.house): 15-20 articles
-- **Major Transactions** (852.house): 20-30
-
-## 📅 Date Range Logic
-
-**Automatic (Smart Date Range)**:
-- **Weekday (Mon-Fri)**: Last full week (previous Monday to Sunday)
-- **Weekend (Sat-Sun)**: Current week (this Monday to today)
-
-**Manual Override**:
 ```bash
-python main.py --start-date 2025-12-29 --end-date 2026-01-04
+# Smart date range (auto-selects last full week on weekdays, current week on weekends)
+python main.py
+
+# Custom date range
+python main.py --start-date 2026-01-01 --end-date 2026-01-07
+
+# Interactive mode (prompted input)
+python main.py --interactive
+
+# Quick mode (first 20 articles only — useful for testing)
+python main.py --quick
 ```
 
-## 🔧 Configuration
+## Configuration (`config.yml`)
 
-1. Copy sample config: `cp config.sample.yml config.yml`
-2. Edit `config.yml` and choose your AI setup:
-
-### Option 1: Cloud DeepSeek (Recommended)
 ```yaml
 deepseek:
-  api_key: "sk-your-deepseek-api-key"
+  api_key: "sk-..."           # AI API key (leave empty to disable AI)
   api_base: "https://api.deepseek.com"
   model: "deepseek-chat"
+
+scraping:
+  verify_ssl: true            # set false on corporate networks with SSL inspection
 ```
 
-### Option 2: Local AI (LM Studio, Ollama, etc.)
-```yaml
-deepseek:
-  api_key: "local-key"  # Any value works for local
-  api_base: "http://localhost:1234/v1"  # LM Studio default
-  model: "qwen2.5-32b-instruct"  # Your local model name
-```
+### AI options
 
-### Option 3: No AI (Basic Scraping Only)
-```yaml
-deepseek:
-  api_key: ""  # Leave empty to disable AI
-```
+| Setup | `api_key` | `api_base` |
+|-------|-----------|------------|
+| Cloud AI | your key | `https://api.deepseek.com` |
+| Local AI (LM Studio / Ollama) | any value | `http://localhost:1234/v1` |
+| No AI | *(empty)* | *(any)* |
 
-**AI Features**:
-- **With AI**: Categorization, filtering, deduplication, district extraction
-- **Without AI**: Basic scraping only, no AI processing
-- **Cross-computer compatible**: Run on different machines with or without API keys
+Without an AI key the scraper still runs but skips categorisation, deduplication, and district extraction.
 
-## 📦 Requirements
+## Requirements
 
 - Python 3.8+
-- Chrome/Chromium browser (for Centaline scraping)
+- Google Chrome (used for browser-based data collection)
 - Internet connection
-- DeepSeek AI API key
+- AI API key (optional)
 
-## ⚠️ Notes
+## Date Range Logic
 
-### Midland ICI Authorization
-- Automatically retrieves fresh authorization token using ChromeDriver
-- Creates new session every time to avoid tracking
-- No manual token configuration needed
+- **Weekday (Mon–Fri):** previous Monday → Sunday (last full week)
+- **Weekend (Sat–Sun):** this Monday → today (current week)
 
-### Filters Applied
-- **Centaline**: Area > 2000 sqft, Date range
-- **Midland**: Area >= 2500 sqft, Date range, Fresh session every time to avoid tracking
-- **News**: AI-filtered for HK market relevance (score >= 6/10)
-  - **Excludes**: Greater Bay Area, Mainland China, quality issues, property management
-  - **Focuses on**: Hong Kong real estate valuation, market trends, price analysis
+Override with `--start-date` / `--end-date` at any time.
 
-## 📖 Usage Examples
+## Filters Applied
 
-### Default (Smart Date Range)
-```bash
-python main.py
-```
+| Source | Filter |
+|--------|--------|
+| Residential | Area > 2 000 sqft, within date range |
+| Commercial | Area ≥ 2 500 sqft, within date range |
+| News | AI relevance score ≥ 6/10; excludes Greater Bay Area, Mainland, quality complaints |
+| Major transactions | Price ≥ $20M HKD **or** area ≥ 2 000 sqft |
 
-### Custom Date Range
-```bash
-python main.py --start-date 2025-12-01 --end-date 2025-12-31
-```
+## Troubleshooting
 
-### Expected Runtime
-- Data collection: 2-3 minutes
-- AI processing: 3-5 minutes
-- **Total**: 5-10 minutes
+**SSL / network errors on corporate networks**
+Set `verify_ssl: false` in `config.yml`.
 
-## 📊 Sample Output
+**No residential results**
+Chrome must be installed. The site's filter UI may have changed.
 
-```
-✅ SCRAPING COMPLETED SUCCESSFULLY
+**Auth token not retrieved for commercial data**
+The commercial data provider's website may have updated its auth flow.
+Check the logs — the scraper tries three strategies before giving up.
 
-📊 Summary:
-  Primary source: 21 transactions + 59 news
-  Trans_Commercial: 12 + 44 = 56
-    - Centaline (Residential): 12
-    - Midland ICI (Commercial): 44
-  Total: 77 transactions
-
-📁 Output: output/property_report_260105_131447.xlsx
-```
-
-## 🆘 Troubleshooting
-
-**No Centaline results**:
-- Check Chrome is installed
-- Website filters may need adjustment
-- May be no large properties (>2000 sqft) in date range
-
-**Midland 401 error**:
-- Authorization token expired
-- Update token in `utils/midland_api_scraper.py`
-
-**AI errors**:
-- Check DeepSeek API key in `config.yml`
-- Verify API quota/credits
-
-## 📝 License
-
-See LICENSE file for details.
+**AI errors**
+Verify your `api_key` and API quota in `config.yml`.

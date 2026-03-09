@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
 """
-852.House News Scraper - Main Entry Point
+HK Property News Scraper — main entry point.
 
-This script scrapes Hong Kong real estate news from https://852.house/zh/newses
-and categorizes them into Transactions, Real Estate News, and New Property using AI.
+Collects property transactions and market news, categorises them with AI,
+and writes a multi-sheet Excel report.
 
 Usage:
-    python main_852house.py
-
-The script will prompt for start and end dates, then:
-1. Scrape news articles within the date range
-2. Use DeepSeek AI to categorize each article
-3. Extract detailed information from each article
-4. Save results to Excel with 3 tabs
+    python main.py                                    # smart date range
+    python main.py --start-date 2026-01-01 --end-date 2026-01-07
+    python main.py --interactive                      # prompt for dates
+    python main.py --quick                            # test with first 20 articles
 """
 
 import sys
@@ -28,7 +25,6 @@ from utils.centaline_web_scraper import CentalineWebScraper
 from utils.midland_api_scraper import MidlandAPIScraper
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
-import os
 
 
 def get_smart_date_range():
@@ -109,13 +105,10 @@ def main():
     args = parser.parse_args()
     
     print("=" * 80)
-    print("852.House Hong Kong Real Estate News Scraper")
+    print("HK Property News Scraper")
     print("=" * 80)
-    print("\nThis tool will scrape news from https://852.house/zh/newses")
-    print("and categorize them using DeepSeek AI into:")
-    print("  1. Transactions (Sales/Lease)")
-    print("  2. Real Estate News")
-    print("  3. New Property")
+    print("\nCollects property transactions and market news, then writes an Excel report.")
+    print("Categories: Transactions | Real Estate News | New Property")
     print("\n" + "=" * 80)
     
     # Get date range
@@ -166,38 +159,32 @@ def main():
     residential_valid = False
     commercial_valid = False
     
-    # Fetch residential data from Centaline (web scraping)
-    print("\n[FETCH] Residential data from Centaline website...")
+    print("\n[FETCH] Residential transactions (web scraping)...")
     try:
         with CentalineWebScraper(headless=True) as scraper:
             centaline_transactions = scraper.fetch_transactions(start_date, end_date, min_area=2000)
-            
             if centaline_transactions:
                 residential_valid = True
-                print(f"✓ Found {len(centaline_transactions)} residential transactions (> 2000 sqft)")
+                print(f"✓ Found {len(centaline_transactions)} residential transactions (>2000 sqft)")
             else:
-                print(f"⚠️  No residential transactions found")
+                print("⚠️  No residential transactions found")
     except Exception as e:
-        logger.error(f"Centaline scraping error: {e}")
-        print(f"⚠️  Error fetching Centaline data: {e}")
-    
-    # Fetch commercial data from Midland ICI (API with auto token)
-    print("\n[FETCH] Commercial data from Midland ICI API...")
+        logger.error(f"Residential scraping error: {e}")
+        print(f"⚠️  Error fetching residential data: {e}")
+
+    print("\n[FETCH] Commercial transactions (API)...")
     try:
         api_scraper = MidlandAPIScraper()
         raw_midland = api_scraper.fetch_transactions(start_date, end_date, min_area=2500)
-        
-        # Parse transactions
         midland_transactions = [api_scraper.parse_transaction(tx) for tx in raw_midland]
-        
         if midland_transactions:
             commercial_valid = True
-            print(f"✓ Found {len(midland_transactions)} commercial transactions (>= 2500 sqft)")
+            print(f"✓ Found {len(midland_transactions)} commercial transactions (>=2500 sqft)")
         else:
-            print(f"⚠️  No commercial transactions found")
+            print("⚠️  No commercial transactions found")
     except Exception as e:
-        logger.error(f"Midland API error: {e}")
-        print(f"⚠️  Error fetching Midland data: {e}")
+        logger.error(f"Commercial API error: {e}")
+        print(f"⚠️  Error fetching commercial data: {e}")
     
     # Check if we should proceed
     if not residential_valid and not commercial_valid:
@@ -230,8 +217,7 @@ def main():
     print("=" * 80)
     
     try:
-        # Step 1: Scrape news articles (title + preview only, no full content yet)
-        print("\n[STEP 1/6] Scraping article list from primary source")
+        print("\n[STEP 1/7] Scraping article list from primary news source")
         print(f"  → Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         scraper = House852Scraper()
         
@@ -311,11 +297,10 @@ def main():
         else:
             print(f"✓ Found {len(html_pages)} articles in date range")
         
-        # Step 1.5: Filter major transactions and keep all news
-        print(f"\n  → Filtering for major transactions (>=20M HKD or >=2000 sqft)...")
+        print(f"\n[STEP 2/7] Pre-filtering articles")
+        print(f"  → Filtering for major transactions (>=20M HKD or >=2000 sqft)...")
         transaction_articles, total, filtered_count = filter_transactions(html_pages)
-        
-        # Also categorize to separate news from transactions early
+
         print(f"  → Pre-categorizing to identify news articles...")
         categorizer = DeepSeekCategorizer()
         
@@ -356,7 +341,7 @@ def main():
             articles = articles[:20]
             print(f"  → Quick mode: Processing first {len(articles)} articles (out of {original_count})")
         
-        print(f"\n[STEP 3/6] AI categorization using DeepSeek (parallel: 10 workers)")
+        print(f"\n[STEP 3/7] AI categorization (parallel: 10 workers)")
         categorizer = DeepSeekCategorizer()
         categorized_articles = categorizer.categorize_batch(articles)
         
@@ -372,7 +357,7 @@ def main():
             exclude_count = len([a for a in categorized_articles if a.get('category') == 'exclude'])
             print(f"  → Excluded: {exclude_count} articles (non-valuation, quality issues, etc.) + {new_prop_count} new_property (not processed)")
         
-        print(f"\n[STEP 4/6] Fetching full article content")
+        print(f"\n[STEP 4/7] Fetching full article content")
         # Only fetch content for articles that will be included (exclude already filtered by AI)
         all_to_fetch = transactions + news_articles
         for article in all_to_fetch:
@@ -382,7 +367,7 @@ def main():
             article['fetch_success'] = article_data['success']
         print(f"✓ Fetched {len(all_to_fetch)} articles (excluded {len(excluded_articles)} articles skipped)")
         
-        print(f"\n[STEP 5/6] AI detail extraction (parallel: 10 workers)")
+        print(f"\n[STEP 5/7] AI detail extraction (parallel: 10 workers)")
         extractor = DetailExtractor()
         
         print(f"Extracting {len(transactions)} transaction details...")
@@ -434,59 +419,50 @@ def main():
         print(f"  → Major transactions: {len(transactions)} (filtered from {len(all_extracted_transactions)})")
         
         if news_articles:
-            print(f"\nExtracting {len(news_articles)} news summaries (will filter out General)...")
+            total_news_before_filter = len(news_articles)
+            print(f"\nExtracting {total_news_before_filter} news summaries (will filter out General)...")
             filtered_news = []
             with ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_article = {executor.submit(extractor.extract_news_summary, article): article 
-                                   for article in news_articles}
-                
-                for future in tqdm(as_completed(future_to_article), total=len(news_articles), 
-                                  desc="News", unit="article"):
+                future_to_article = {executor.submit(extractor.extract_news_summary, article): article
+                                     for article in news_articles}
+                for future in tqdm(as_completed(future_to_article), total=total_news_before_filter,
+                                   desc="News", unit="article"):
                     try:
                         article = future_to_article[future]
                         details = future.result()
                         article['details'] = details
-                        # Only keep Residential and Commercial
-                        asset_cat = details.get('asset_category', '')
-                        if asset_cat in ['Residential', 'Commercial']:
+                        if details.get('asset_category', '') in ('Residential', 'Commercial'):
                             filtered_news.append(article)
                     except Exception as e:
                         logger.error(f"Error extracting news: {e}")
-            
             news_articles = filtered_news
-            print(f"✓ Kept {len(news_articles)} market-related news (excluded {225 - len(news_articles)} General)")
+            excluded = total_news_before_filter - len(news_articles)
+            print(f"✓ Kept {len(news_articles)} market-related news (excluded {excluded} General)")
         else:
-            print(f"No news articles to process")
+            print("No news articles to process")
         
         print(f"✓ Detail extraction complete")
         
-        print(f"\n[STEP 6/7] Preparing additional data sources")
-        
-        # Data was already fetched via automated scrapers
-        # centaline_transactions and midland_transactions are already available from earlier steps
-        
+        print(f"\n[STEP 6/7] Additional data sources")
         if residential_valid:
-            print(f"✓ Company A (Centaline): {len(centaline_transactions)} residential transactions")
+            print(f"✓ Residential transactions: {len(centaline_transactions)}")
         else:
-            print("ℹ️  No Company A residential data available")
-        
+            print("ℹ️  No residential data available")
         if commercial_valid:
-            print(f"✓ Company B (Midland ICI): {len(midland_transactions)} commercial transactions")
+            print(f"✓ Commercial transactions: {len(midland_transactions)}")
         else:
-            print("ℹ️  No Company B commercial data available")
-        
-        # Fetch new properties from 28hse.com
-        print(f"\n[STEP 7/7] Fetching new property data from 28hse.com...")
+            print("ℹ️  No commercial data available")
+
+        print(f"\n[STEP 7/7] Fetching new property listings...")
         new_properties = []
         try:
             from utils.new_property_scraper import NewPropertyScraper
             new_prop_scraper = NewPropertyScraper()
             new_properties = new_prop_scraper.fetch_new_properties(start_date, end_date)
-            
             if new_properties:
-                print(f"✓ Found {len(new_properties)} new property launches this week")
+                print(f"✓ Found {len(new_properties)} new property launches")
             else:
-                print(f"ℹ️  No new property launches found in date range")
+                print("ℹ️  No new property launches found in date range")
         except Exception as e:
             logger.error(f"New property scraping error: {e}")
             print(f"⚠️  Could not fetch new property data: {e}")
@@ -509,19 +485,14 @@ def main():
         print("=" * 80)
         
         print(f"\n📊 Summary:")
-        print(f"  Primary source: {len(transactions)} transactions + {len(news_articles)} news")
-        print(f"  Trans_Commercial: {actual_centaline} + {actual_midland} = {actual_centaline + actual_midland}")
-        print(f"    - Company A (Residential): {actual_centaline}")
-        print(f"    - Company B (Commercial): {actual_midland}")
-        print(f"  New Properties: {actual_new_prop}")
-        print(f"  Total: {len(transactions) + actual_centaline + actual_midland} transactions")
-        
+        print(f"  Major transactions (news source): {len(transactions)}")
+        print(f"  News articles: {len(news_articles)}")
+        print(f"  Residential transactions: {actual_centaline}")
+        print(f"  Commercial transactions:  {actual_midland}")
+        print(f"  New property launches:    {actual_new_prop}")
+        print(f"  Total transactions: {len(transactions) + actual_centaline + actual_midland}")
         print(f"\n📁 Output: {output_file}")
-        
-        if actual_new_prop > 0:
-            print(f"\n💡 NEW PROPERTY INFO THIS WEEK: {actual_new_prop} property launches")
-        
-        print("\n📋 4 Sheets: Transactions | News | Trans_Commercial | new_property")
+        print("\n📋 4 Sheets: major_trans | news | Trans_Commercial | new_property")
         print("\n" + "=" * 80)
         
         return 0

@@ -1,29 +1,23 @@
 #!/usr/bin/env python3
 """
-Detail Extractor - Extract structured transaction details using AI
+Detail Extractor — extracts structured transaction details from articles using AI.
 """
 
-import yaml
 import logging
-from typing import Dict, List
+from typing import Dict
 from openai import OpenAI
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
 import httpx
+from .utils import load_config, parse_json_response, format_date_str
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class DetailExtractor:
-    """Extract detailed transaction information using AI"""
-    
+    """Extract detailed transaction information using AI."""
+
     def __init__(self, config_path: str = "config.yml"):
-        with open(config_path, 'r', encoding='utf-8') as f:
-            self.config = yaml.safe_load(f)
-        
-        deepseek_config = self.config.get('deepseek', {})
+        config = load_config(config_path)
+        deepseek_config = config.get('deepseek', {})
         api_key = deepseek_config.get('api_key', '')
         
         # Only initialize AI if API key is provided
@@ -44,21 +38,15 @@ class DetailExtractor:
             logger.warning("No AI API key configured - AI features disabled")
     
     def extract_transaction_details(self, article: Dict) -> Dict:
-        """Extract detailed transaction information"""
+        """Extract detailed transaction information."""
         if not self.ai_enabled:
             logger.warning("AI not enabled - returning basic details only")
             return self._get_basic_transaction_details(article)
-        
+
         title = article.get('title', '')
         content = article.get('full_content', article.get('description', ''))
         date_str = article.get('date', '')
-        
-        # Convert date to dd/mm/yyyy format
-        try:
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-            formatted_date = date_obj.strftime('%d/%m/%Y')
-        except:
-            formatted_date = date_str
+        formatted_date = format_date_str(date_str)
         
         prompt = f"""請從以下香港地產交易新聞中提取詳細資訊。請以JSON格式回覆，只包含數據，不要有其他說明。
 
@@ -116,21 +104,7 @@ class DetailExtractor:
             )
             
             result = response.choices[0].message.content.strip()
-            
-            # Try to parse JSON
-            import json
-            # Remove markdown code blocks if present
-            if '```' in result:
-                result = result.split('```')[1]
-                if result.startswith('json'):
-                    result = result[4:]
-            
-            details_dict = json.loads(result)
-            
-            # Ensure it's a dict, not a list
-            if isinstance(details_dict, list):
-                details_dict = details_dict[0] if details_dict else {}
-            
+            details_dict = parse_json_response(result)
             details_dict['date'] = formatted_date
             
             # Convert yield to decimal format if needed
@@ -167,15 +141,9 @@ class DetailExtractor:
             }
     
     def _get_basic_transaction_details(self, article: Dict) -> Dict:
-        """Get basic transaction details when AI is not available"""
+        """Get basic transaction details when AI is not available."""
         title = article.get('title', '')
-        date_str = article.get('date', '')
-        
-        try:
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-            formatted_date = date_obj.strftime('%d/%m/%Y')
-        except:
-            formatted_date = date_str
+        formatted_date = format_date_str(article.get('date', ''))
         
         return {
             'date': formatted_date,
@@ -194,21 +162,14 @@ class DetailExtractor:
         }
     
     def extract_news_summary(self, article: Dict) -> Dict:
-        """Extract news summary using AI"""
+        """Extract news summary using AI."""
         if not self.ai_enabled:
             logger.warning("AI not enabled - returning basic news summary")
             return self._get_basic_news_summary(article)
-        
+
         title = article.get('title', '')
         content = article.get('full_content', article.get('description', ''))
-        date_str = article.get('date', '')
-        
-        # Convert date
-        try:
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-            formatted_date = date_obj.strftime('%d/%m/%Y')
-        except:
-            formatted_date = date_str
+        formatted_date = format_date_str(article.get('date', ''))
         
         prompt = f"""請根據以下新聞提供一段總結, 大約120中文字, 需要事實, 毋需你的評語, 如果有數據或引用, 請儘量包括在總結中, 但不需要提及當前報章的名字:
 
@@ -241,56 +202,58 @@ class DetailExtractor:
   "asset_category": "Residential/Commercial/General"
 }}"""
 
-        try:
+        def _call_api(prompt_text: str) -> dict:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": "你是專業的香港地產新聞分析師。"},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt_text},
                 ],
                 temperature=0.3,
-                max_tokens=500
+                max_tokens=500,
             )
-            
             result = response.choices[0].message.content.strip()
-            
-            import json
-            if '```' in result:
-                result = result.split('```')[1]
-                if result.startswith('json'):
-                    result = result[4:]
-            
-            details_dict = json.loads(result)
-            
-            # Ensure it's a dict
-            if isinstance(details_dict, list):
-                details_dict = details_dict[0] if details_dict else {}
-            
-            details_dict['date'] = formatted_date
-            details_dict['topic'] = title
-            return details_dict
-            
+            d = parse_json_response(result)
+            d['date'] = formatted_date
+            d['topic'] = title
+            return d
+
+        try:
+            return _call_api(prompt)
         except Exception as e:
-            logger.error(f"Error extracting summary: {e}")
+            err_str = str(e)
+            # DeepSeek rejects some content due to its moderation filter.
+            # Retry with title-only (no article body) before giving up.
+            if 'Content Exists Risk' in err_str or '400' in err_str:
+                logger.warning(
+                    f"Content moderation triggered for '{title[:40]}' — "
+                    "retrying with title only"
+                )
+                title_only_prompt = (
+                    f"請根據以下新聞標題判斷物業類別並提供簡短總結:\n\n"
+                    f"標題: {title}\n\n"
+                    f"請以JSON格式回覆:\n"
+                    f'{{"summary": "短摘要", "asset_category": "Residential/Commercial/General"}}'
+                )
+                try:
+                    return _call_api(title_only_prompt)
+                except Exception as e2:
+                    logger.warning(f"Retry also failed for '{title[:40]}': {e2}")
+            else:
+                logger.error(f"Error extracting summary: {e}")
+
             return {
                 'date': formatted_date,
                 'topic': title,
                 'summary': content[:120] if content else 'N/A',
-                'asset_category': 'General'
+                'asset_category': 'General',
             }
     
     def _get_basic_news_summary(self, article: Dict) -> Dict:
-        """Get basic news summary when AI is not available"""
+        """Get basic news summary when AI is not available."""
         title = article.get('title', '')
         content = article.get('full_content', article.get('description', ''))
-        date_str = article.get('date', '')
-        
-        try:
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-            formatted_date = date_obj.strftime('%d/%m/%Y')
-        except:
-            formatted_date = date_str
-        
+        formatted_date = format_date_str(article.get('date', ''))
         return {
             'date': formatted_date,
             'topic': title,

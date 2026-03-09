@@ -1,49 +1,32 @@
 #!/usr/bin/env python3
 """
-AI Categorizer using DeepSeek API
-Categorizes news articles into: Transactions, Real Estate News, or New Property
+AI Categorizer — classifies articles into: transactions, news, new_property, or exclude.
 """
 
-import yaml
 import logging
 from typing import List, Dict
 from openai import OpenAI
 from tqdm import tqdm
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from .utils import load_config
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class DeepSeekCategorizer:
-    """Use DeepSeek AI to categorize news articles"""
-    
+    """Use an AI API to categorize news articles."""
+
     def __init__(self, config_path: str = "config.yml"):
-        """
-        Initialize the categorizer with AI API (DeepSeek cloud or local AI)
-        
-        Args:
-            config_path: Path to the YAML configuration file
-        """
-        with open(config_path, 'r', encoding='utf-8') as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
         
         deepseek_config = self.config['deepseek']
-        
-        # Initialize OpenAI client with base_url (works for both cloud and local AI)
-        # For local AI: set api_base to "http://localhost:1234/v1" or your local endpoint
-        # For cloud: use "https://api.deepseek.com"
         self.client = OpenAI(
             api_key=deepseek_config.get('api_key', 'local-key'),
-            base_url=deepseek_config.get('api_base', 'https://api.deepseek.com')
+            base_url=deepseek_config.get('api_base', 'https://api.deepseek.com'),
         )
-        
-        # Support both 'model' and 'chat_model' config keys for compatibility
         self.model = deepseek_config.get('chat_model', deepseek_config.get('model', 'deepseek-chat'))
         self.temperature = deepseek_config.get('temperature', 0.3)
         self.max_tokens = deepseek_config.get('max_tokens', 4000)
-        
         self.categories = self.config['categories']
     
     def categorize_article(self, title: str, description: str = "", tags: List[str] = None) -> str:
@@ -219,167 +202,5 @@ class DeepSeekCategorizer:
         
         return categorized
     
-    def extract_details(self, article: Dict) -> Dict:
-        """
-        Extract detailed information from article content using AI
-        
-        Args:
-            article: Article dictionary with full_content
-            
-        Returns:
-            Dictionary with extracted details
-        """
-        category = article.get('category', 'news')
-        title = article.get('title', '')
-        content = article.get('full_content', '')
-        
-        # Limit content length to avoid token limits
-        if len(content) > 3000:
-            content = content[:3000] + "..."
-        
-        # Different prompts based on category
-        if category == 'transactions':
-            prompt = f"""請從以下香港地產交易新聞中提取關鍵信息：
-
-標題: {title}
-
-內容: {content}
-
-請提取以下信息（如果有的話）：
-1. 物業名稱/地址
-2. 交易類型（買賣/租賃）
-3. 成交價格或租金
-4. 物業類型（住宅/商舖/寫字樓等）
-5. 面積
-6. 呎價
-7. 買家/賣家信息（如果有）
-8. 其他重要細節
-
-請以結構化的方式回答，格式如下：
-物業: [物業名稱]
-類型: [交易類型]
-價格: [價格]
-物業類別: [類別]
-面積: [面積]
-呎價: [呎價]
-詳情: [其他重要信息]"""
-
-        elif category == 'new_property':
-            prompt = f"""請從以下香港新樓盤新聞中提取關鍵信息：
-
-標題: {title}
-
-內容: {content}
-
-請提取以下信息（如果有的話）：
-1. 樓盤名稱
-2. 位置/地區
-3. 發展商
-4. 單位數量
-5. 戶型（1房/2房/3房等）
-6. 價格範圍
-7. 開售日期/階段
-8. 其他重要細節
-
-請以結構化的方式回答，格式如下：
-樓盤: [名稱]
-位置: [地區]
-發展商: [公司]
-單位數: [數量]
-戶型: [戶型]
-價格: [價格範圍]
-詳情: [其他重要信息]"""
-
-        else:  # news
-            prompt = f"""請總結以下香港地產新聞的要點：
-
-標題: {title}
-
-內容: {content}
-
-請提供：
-1. 新聞摘要（2-3句）
-2. 主要涉及的地區/物業類型
-3. 關鍵數據或趨勢
-4. 影響或意義
-
-請以結構化的方式回答。"""
-
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "你是一個香港地產新聞分析專家。請準確提取和總結關鍵信息。"},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=self.temperature,
-                max_tokens=self.max_tokens
-            )
-            
-            extracted_info = response.choices[0].message.content.strip()
-            
-            return {
-                'extracted_info': extracted_info,
-                'success': True
-            }
-            
-        except Exception as e:
-            logger.error(f"Error extracting details: {e}")
-            return {
-                'extracted_info': f"提取失敗: {str(e)}",
-                'success': False
-            }
-    
-    def process_articles_with_details(self, articles: List[Dict]) -> List[Dict]:
-        """
-        Process articles to extract detailed information
-        
-        Args:
-            articles: List of categorized articles
-            
-        Returns:
-            List of articles with extracted details
-        """
-        logger.info(f"Extracting details from {len(articles)} articles...")
-        
-        for article in tqdm(articles, desc="Extracting details", unit="article"):
-            details = self.extract_details(article)
-            article['extracted_info'] = details['extracted_info']
-            article['extraction_success'] = details['success']
-            
-            # Small delay to avoid rate limiting
-            time.sleep(0.5)
-        
-        return articles
-
-
-if __name__ == "__main__":
-    # Test the categorizer
-    categorizer = DeepSeekCategorizer()
-    
-    # Test articles
-    test_articles = [
-        {
-            'title': '御林皇府洋房3千萬沽 設計師20年蝕11%',
-            'description': '二手豪宅市場交投回升，不少名人趁旺出售手上豪宅單位。',
-            'tags': ['成交', '蝕讓', '走勢']
-        },
-        {
-            'title': '地署擬收牛潭尾66公頃地 建住宅大學城',
-            'description': '政府加速北都發展，地政總署刊憲收回牛潭尾新區內66公頃的私人土地',
-            'tags': ['政策', '走勢', '改用']
-        },
-        {
-            'title': '栢景峰今開售入場價427萬',
-            'description': '發展商推盤步伐重新加快，本周末約有250個單位發售',
-            'tags': ['新盤', '招標', '走勢']
-        }
-    ]
-    
-    categorized = categorizer.categorize_batch(test_articles)
-    
-    for article in categorized:
-        print(f"\nTitle: {article['title']}")
-        print(f"Category: {article['category']}")
 
 
